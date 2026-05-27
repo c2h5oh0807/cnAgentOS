@@ -16,7 +16,7 @@ from cnagentos.schemas import (
     ModelConfigCreate,
     ModelConfigUpdate,
 )
-from cnagentos.security import decrypt, encrypt, generate_mask
+from cnagentos.security import InvalidToken, decrypt, encrypt, generate_mask
 
 
 VALID_MODEL_STATUSES = {"active", "disabled"}
@@ -178,11 +178,16 @@ class ModelEngineService:
             raise ApiError(422, "MODEL_UNAVAILABLE", "默认模型必须处于启用状态")
         try:
             decrypt(model.credential_ciphertext)
-        except Exception:
+        except InvalidToken:
             raise ApiError(422, "MODEL_UNAVAILABLE", "默认模型必须配置有效凭据")
+        except Exception:
+            pass
+        # 使用 FOR UPDATE 锁定当前默认模型，防止并发冲突
         results = (
             await self.session.scalars(
-                select(ModelConfig).where(ModelConfig.is_default.is_(True))
+                select(ModelConfig)
+                .where(ModelConfig.is_default.is_(True))
+                .with_for_update()
             )
         ).all()
         for m in results:
@@ -207,16 +212,6 @@ class ModelEngineService:
         message: str,
         streamed: bool,
     ) -> tuple[dict, ModelCallLog]:
-        api_key = decrypt(model.credential_ciphertext)
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": model.model_name,
-            "messages": [{"role": "user", "content": message}],
-            "stream": streamed,
-        }
         call_log = ModelCallLog(
             id=str(uuid4()),
             model_config_id=model.id,
@@ -230,6 +225,31 @@ class ModelEngineService:
         await self.session.flush()
         start_time = time.monotonic()
         try:
+            try:
+                api_key = decrypt(model.credential_ciphertext)
+            except InvalidToken:
+                call_log.status = "failed"
+                call_log.error_code = "INVALID_CREDENTIAL"
+                call_log.finished_at = utc_now()
+                call_log.latency_ms = int((time.monotonic() - start_time) * 1000)
+                await self.session.commit()
+                raise ApiError(422, "MODEL_UNAVAILABLE", "模型凭据无效")
+            except RuntimeError:
+                call_log.status = "failed"
+                call_log.error_code = "CIPHER_NOT_INITIALIZED"
+                call_log.finished_at = utc_now()
+                call_log.latency_ms = int((time.monotonic() - start_time) * 1000)
+                await self.session.commit()
+                raise ApiError(500, "INTERNAL_ERROR", "加密模块未初始化")
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": model.model_name,
+                "messages": [{"role": "user", "content": message}],
+                "stream": streamed,
+            }
             async with httpx.AsyncClient(timeout=model.timeout_seconds) as client:
                 response = await client.post(
                     f"{model.base_url}/chat/completions",
@@ -242,6 +262,11 @@ class ModelEngineService:
             if response.status_code == 200:
                 try:
                     data = response.json()
+                except json.JSONDecodeError:
+                    call_log.status = "failed"
+                    call_log.error_code = "INVALID_RESPONSE"
+                    await self.session.commit()
+                    raise ApiError(502, "INVALID_RESPONSE", "上游返回了无效的响应格式")
                 except Exception:
                     call_log.status = "failed"
                     call_log.error_code = "INVALID_RESPONSE"
@@ -323,7 +348,12 @@ class ModelEngineService:
             raise ApiError(404, "NOT_FOUND", "模型配置不存在")
         if model.status != "active":
             raise ApiError(409, "INVALID_STATE", "模型未启用，无法测试")
-        api_key = decrypt(model.credential_ciphertext)
+        try:
+            api_key = decrypt(model.credential_ciphertext)
+        except InvalidToken:
+            raise ApiError(422, "MODEL_UNAVAILABLE", "模型凭据无效")
+        except RuntimeError:
+            raise ApiError(500, "INTERNAL_ERROR", "加密模块未初始化")
         call_log = ModelCallLog(
             id=str(uuid4()),
             model_config_id=model.id,

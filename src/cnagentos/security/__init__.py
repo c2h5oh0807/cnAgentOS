@@ -8,13 +8,14 @@ from pwdlib import PasswordHash
 
 from cnagentos.api import ApiError
 
-from .cipher import decrypt, encrypt, generate_mask, init_cipher
+from .cipher import decrypt, encrypt, generate_mask, init_cipher, InvalidToken
 
 __all__ = [
     "decrypt",
     "encrypt",
     "generate_mask",
     "init_cipher",
+    "InvalidToken",
     "tokens_match",
 ]
 
@@ -45,7 +46,7 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str | None) -> bool:
-    return password_hasher.verify(password_hash or _get_dummy_password_hash(), password)
+    return password_hasher.verify(password, password_hash or _get_dummy_password_hash())
 
 
 async def verify_password_async(password: str, password_hash: str | None) -> bool:

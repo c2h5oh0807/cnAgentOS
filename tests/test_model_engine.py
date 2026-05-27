@@ -19,7 +19,7 @@ async def test_model_config_crud(client, admin_session):
     data = created.json()["data"]
     model_id = data["id"]
     assert data["name"] == "测试模型"
-    assert data["credential_mask"] == "****7890"
+    assert data["credential_mask"] == "****6789"
     assert data["status"] == "disabled"
     assert data["is_default"] is False
     body_str = json.dumps(created.json())
@@ -155,6 +155,26 @@ async def test_model_not_found(client, admin_session):
 
 
 async def test_model_permission_enforcement(client, app, admin_session):
+    # 获取 models.view 权限
+    permissions = await client.get("/api/v1/admin/permissions")
+    permissions_data = permissions.json()["data"]
+    models_view_perm = next(p for p in permissions_data if p["code"] == "models.view")
+    models_manage_perm = next(p for p in permissions_data if p["code"] == "models.manage")
+
+    # 创建只有 models.view 权限的角色
+    viewer_role_resp = await client.post(
+        "/api/v1/admin/roles",
+        headers={"X-CSRF-Token": admin_session},
+        json={
+            "code": "model_viewer_role",
+            "name": "模型查看者",
+            "permission_ids": [models_view_perm["id"]],
+        },
+    )
+    assert viewer_role_resp.status_code == 201
+    viewer_role_id = viewer_role_resp.json()["data"]["id"]
+
+    # 创建只有 models.view 权限的用户
     viewer_resp = await client.post(
         "/api/v1/admin/users",
         headers={"X-CSRF-Token": admin_session},
@@ -162,7 +182,7 @@ async def test_model_permission_enforcement(client, app, admin_session):
             "username": "model_viewer",
             "display_name": "模型观察者",
             "password": "Viewer-password-123",
-            "role_ids": [],
+            "role_ids": [viewer_role_id],
         },
     )
     assert viewer_resp.status_code == 201
@@ -178,9 +198,11 @@ async def test_model_permission_enforcement(client, app, admin_session):
         assert login_resp.status_code == 200
         viewer_csrf = login_resp.json()["data"]["csrf_token"]
 
+        # 有 models.view 权限，应该能查看
         view_ok = await viewer_client.get("/api/v1/admin/models")
         assert view_ok.status_code == 200
 
+        # 没有 models.manage 权限，应该被拒绝创建
         create_forbidden = await viewer_client.post(
             "/api/v1/admin/models",
             headers={"X-CSRF-Token": viewer_csrf},
@@ -193,6 +215,32 @@ async def test_model_permission_enforcement(client, app, admin_session):
         )
         assert create_forbidden.status_code == 403
         assert create_forbidden.json()["error"]["code"] == "PERMISSION_DENIED"
+
+    # 测试无角色用户（应返回 403）
+    no_role_resp = await client.post(
+        "/api/v1/admin/users",
+        headers={"X-CSRF-Token": admin_session},
+        json={
+            "username": "no_role_user",
+            "display_name": "无角色用户",
+            "password": "Norole-password-123",
+            "role_ids": [],
+        },
+    )
+    assert no_role_resp.status_code == 201
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as no_role_client:
+        login_no_role = await no_role_client.post(
+            "/api/v1/auth/login",
+            json={"username": "no_role_user", "password": "Norole-password-123"},
+        )
+        assert login_no_role.status_code == 200
+
+        view_forbidden = await no_role_client.get("/api/v1/admin/models")
+        assert view_forbidden.status_code == 403
+        assert view_forbidden.json()["error"]["code"] == "PERMISSION_DENIED"
 
 
 async def test_model_call_logs_listing(client, admin_session):

@@ -157,7 +157,13 @@ async def connection_test(
     if payload.stream:
         raise ApiError(400, "VALIDATION_ERROR", "流式测试请使用 /stream 端点")
     service = service_for(request, session, context)
-    data = await service.connection_test(model_id, payload)
+    data = await audit_on_error(
+        service,
+        "model.connection_tested",
+        "model_config",
+        model_id,
+        lambda: service.connection_test(model_id, payload),
+    )
     return success_response(request, data)
 
 

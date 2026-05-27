@@ -26,7 +26,7 @@ def upgrade() -> None:
         sa.Column("credential_ciphertext", sa.Text(), nullable=False),
         sa.Column("credential_mask", sa.String(length=120), nullable=False),
         sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("is_default", sa.Boolean(), nullable=False),
+        sa.Column("is_default", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("timeout_seconds", sa.Integer(), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("created_by", sa.String(length=36), nullable=True),
@@ -35,7 +35,14 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["created_by"], ["users.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_model_configs_is_default", "model_configs", ["is_default"])
+    # 单一默认模型约束：使用部分唯一索引确保只有一个 is_default=true
+    op.create_index(
+        "ix_model_configs_is_default",
+        "model_configs",
+        ["is_default"],
+        postgresql_where=sa.text("is_default = true"),
+        unique=True,
+    )
 
     op.create_table(
         "model_call_logs",
@@ -57,11 +64,15 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["caller_user_id"], ["users.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
+    op.create_index("ix_model_call_logs_model_config_id", "model_call_logs", ["model_config_id"])
+    op.create_index("ix_model_call_logs_caller_user_id", "model_call_logs", ["caller_user_id"])
     op.create_index("ix_model_call_logs_config_created", "model_call_logs", ["model_config_id", "started_at"])
 
 
 def downgrade() -> None:
     op.drop_index("ix_model_call_logs_config_created", table_name="model_call_logs")
+    op.drop_index("ix_model_call_logs_caller_user_id", table_name="model_call_logs")
+    op.drop_index("ix_model_call_logs_model_config_id", table_name="model_call_logs")
     op.drop_table("model_call_logs")
     op.drop_index("ix_model_configs_is_default", table_name="model_configs")
     op.drop_table("model_configs")

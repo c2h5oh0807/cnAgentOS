@@ -79,7 +79,7 @@ Phase 1 A（平台与安全）后端已实现，Phase 1 B 后端已实现，Phas
 | 调用统计 | `GET /api/v1/admin/model-calls`、`GET /model-calls/summary` | 已实现 |
 
 **技术细节**：
-- API 密钥使用 Fernet (AES-128-CBC) 加密存储，凭据掩码只显示 `****xxxx` 格式
+- API 密钥使用 Fernet (AES-128-CBC + HMAC-SHA256) 加密存储，凭据掩码只显示 `****xxxx` 格式
 - 连接测试支持普通响应和 SSE 流式响应
 - 模型调用记录包含耗时、token 使用量和脱敏错误分类
 - 集成测试覆盖 9 条：CRUD、列表过滤、脱敏验证、默认模型保护、权限控制
