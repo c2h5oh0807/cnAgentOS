@@ -153,7 +153,7 @@ class ModelEngineService:
 
     async def update_model_status(self, model_id: str, status: str) -> dict:
         if status not in VALID_MODEL_STATUSES:
-            raise ApiError(400, "VALIDATION_ERROR", "请求参数无效", {"status": "无效状态"})
+            raise ApiError(409, "INVALID_STATE", "无效的状态值", {"status": "无效状态"})
         model = await self.session.get(ModelConfig, model_id)
         if model is None:
             raise ApiError(404, "NOT_FOUND", "模型配置不存在")
@@ -240,7 +240,15 @@ class ModelEngineService:
             call_log.latency_ms = latency_ms
             call_log.finished_at = utc_now()
             if response.status_code == 200:
-                data = response.json()
+                try:
+                    data = response.json()
+                except Exception:
+                    call_log.status = "failed"
+                    call_log.error_code = "INVALID_RESPONSE"
+                    call_log.latency_ms = latency_ms
+                    call_log.finished_at = utc_now()
+                    await self.session.commit()
+                    raise ApiError(502, "INVALID_RESPONSE", "上游返回了无效的响应格式")
                 call_log.status = "succeeded"
                 if "usage" in data and data["usage"]:
                     call_log.prompt_tokens = data["usage"].get("prompt_tokens")

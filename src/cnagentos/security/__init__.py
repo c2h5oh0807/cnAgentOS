@@ -7,7 +7,8 @@ from functools import lru_cache
 from pwdlib import PasswordHash
 
 from cnagentos.api import ApiError
-from cnagentos.security.cipher import decrypt, encrypt, generate_mask, init_cipher
+
+from .cipher import decrypt, encrypt, generate_mask, init_cipher
 
 __all__ = [
     "decrypt",
@@ -44,7 +45,7 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str | None) -> bool:
-    return password_hasher.verify(password, password_hash or _get_dummy_password_hash())
+    return password_hasher.verify(password_hash or _get_dummy_password_hash(), password)
 
 
 async def verify_password_async(password: str, password_hash: str | None) -> bool:
