@@ -54,6 +54,16 @@ uv run pytest
 
 本地配置可从 `.env.example` 开始设置，示例值只用于本地开发，不用于部署。依赖新增或调整应使用 `uv add` / `uv remove`，并在同一次变更中提交更新后的 `pyproject.toml` 与 `uv.lock`。
 
+## Phase 1 管理端界面
+
+管理端页面由 FastAPI 应用直接提供，并调用同源 `/api/v1` 接口：
+
+```bash
+uv run python main.py --port 8000
+```
+
+启动后访问 `http://127.0.0.1:8000`。登录页、后台框架、用户/角色/权限/导航页面和审计页面对接 Phase 1 A 已实现接口；模型配置和测试页面保留入口，等待 Phase 1 B 模型引擎接口接入。
+
 ## 文档导航
 
 | 内容 | 文档 |
