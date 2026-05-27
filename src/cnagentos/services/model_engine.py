@@ -1,3 +1,4 @@
+import json
 import time
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -8,14 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from cnagentos.api import ApiError
-from cnagentos.models.entities import ModelCallLog, ModelConfig, User, utc_now
+from cnagentos.models.entities import AuditLog, ModelCallLog, ModelConfig, User, utc_now
 from cnagentos.schemas import (
     ConnectionTestRequest,
     ModelCallFilters,
     ModelConfigCreate,
     ModelConfigUpdate,
 )
-from cnagentos.security import encrypt, generate_mask
+from cnagentos.security import decrypt, encrypt, generate_mask
 
 
 VALID_MODEL_STATUSES = {"active", "disabled"}
@@ -40,8 +41,6 @@ class ModelEngineService:
         result: str,
         detail: dict | None = None,
     ) -> None:
-        from cnagentos.models.entities import AuditLog
-
         self.session.add(
             AuditLog(
                 id=str(uuid4()),
@@ -177,8 +176,6 @@ class ModelEngineService:
             raise ApiError(404, "NOT_FOUND", "模型配置不存在")
         if model.status != "active":
             raise ApiError(422, "MODEL_UNAVAILABLE", "默认模型必须处于启用状态")
-        from cnagentos.security import decrypt
-
         try:
             decrypt(model.credential_ciphertext)
         except Exception:
@@ -210,8 +207,6 @@ class ModelEngineService:
         message: str,
         streamed: bool,
     ) -> tuple[dict, ModelCallLog]:
-        from cnagentos.security import decrypt
-
         api_key = decrypt(model.credential_ciphertext)
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -258,7 +253,7 @@ class ModelEngineService:
                             content = line[6:].strip()
                             if content and content != "[DONE]":
                                 try:
-                                    chunk = __import__("json").loads(content)
+                                    chunk = json.loads(content)
                                     delta = chunk.get("choices", [{}])[0].get("delta", {})
                                     if "content" in delta:
                                         reply += delta["content"]
@@ -320,7 +315,6 @@ class ModelEngineService:
             raise ApiError(404, "NOT_FOUND", "模型配置不存在")
         if model.status != "active":
             raise ApiError(409, "INVALID_STATE", "模型未启用，无法测试")
-        from cnagentos.security import decrypt
         api_key = decrypt(model.credential_ciphertext)
         call_log = ModelCallLog(
             id=str(uuid4()),

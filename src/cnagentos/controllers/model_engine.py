@@ -1,6 +1,7 @@
 import json
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import datetime
 from typing import Annotated, Any
 
 import httpx
@@ -144,7 +145,7 @@ async def set_default_model(
     return success_response(request, data)
 
 
-@router.post("/models/{model_id}/connection-tests")
+@router.post("/models/{model_id}/connection-tests", dependencies=[Depends(require_csrf)])
 async def connection_test(
     model_id: str,
     payload: ConnectionTestRequest,
@@ -250,8 +251,6 @@ async def list_call_logs(
     started_from: str | None = None,
     started_to: str | None = None,
 ):
-    from datetime import datetime
-
     try:
         from_dt = datetime.fromisoformat(started_from) if started_from else None
         to_dt = datetime.fromisoformat(started_to) if started_to else None
@@ -278,8 +277,6 @@ async def call_summary(
     started_from: str | None = None,
     started_to: str | None = None,
 ):
-    from datetime import datetime
-
     try:
         from_dt = datetime.fromisoformat(started_from) if started_from else None
         to_dt = datetime.fromisoformat(started_to) if started_to else None
