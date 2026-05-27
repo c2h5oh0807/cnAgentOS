@@ -297,8 +297,7 @@ function renderNavigation(nodes, depth = 0) {
       if (!node.route_path) return "";
       const active = state.route === node.route_path ? "active" : "";
       return `
-        <button class="nav-link ${active}" data-route="${escapeHtml(node.route_path)}" type="button" title="${escapeHtml(node.name)}">
-        <button class="nav-link ${active}" data-depth="${depth}" data-route="${escapeHtml(node.route_path || "/admin/models")}" type="button" title="${escapeHtml(node.name)}">
+        <button class="nav-link ${active}" data-depth="${depth}" data-route="${escapeHtml(node.route_path)}" type="button" title="${escapeHtml(node.name)}">
           ${icon(node.icon)}
           <span>${escapeHtml(node.name)}</span>
         </button>
