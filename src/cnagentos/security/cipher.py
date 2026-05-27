@@ -1,3 +1,5 @@
+import base64
+
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -10,7 +12,7 @@ def _derive_key(password: str) -> bytes:
         salt=b"cnagentos-credential-v1",
         iterations=480000,
     )
-    return kdf.derive(password.encode())
+    return base64.urlsafe_b64encode(kdf.derive(password.encode()))
 
 
 _fernet: Fernet | None = None

@@ -389,18 +389,18 @@ class ModelEngineService:
             conditions.append(ModelCallLog.started_at >= started_from)
         if started_to:
             conditions.append(ModelCallLog.started_at <= started_to)
-        rows = (
-            await self.session.scalars(
-                select(
-                    ModelCallLog.status,
-                    func.count(ModelCallLog.id).label("count"),
-                    func.sum(ModelCallLog.total_tokens).label("total_tokens"),
-                    func.avg(ModelCallLog.latency_ms).label("avg_latency"),
-                )
-                .where(*conditions)
-                .group_by(ModelCallLog.status)
+        stmt = (
+            select(
+                ModelCallLog.status,
+                func.count(ModelCallLog.id).label("count"),
+                func.sum(ModelCallLog.total_tokens).label("total_tokens"),
+                func.avg(ModelCallLog.latency_ms).label("avg_latency"),
             )
-        ).all()
+            .where(*conditions)
+            .group_by(ModelCallLog.status)
+        )
+        result = await self.session.execute(stmt)
+        rows = result.all()
         total_calls = 0
         succeeded_calls = 0
         failed_calls = 0
