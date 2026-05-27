@@ -1,16 +1,20 @@
-from collections.abc import Awaitable, Callable
+import json
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+import httpx
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
 from cnagentos.api import ApiError, success_response
 from cnagentos.controllers.dependencies import (
-    CurrentContext,
+    AuthContext,
     DbSession,
     require_csrf,
     require_permission,
 )
+from cnagentos.models.entities import utc_now
 from cnagentos.schemas import (
     ConnectionTestRequest,
     ModelCallFilters,
@@ -18,7 +22,6 @@ from cnagentos.schemas import (
     ModelConfigUpdate,
     StatusUpdate,
 )
-from cnagentos.services.auth import AuthContext
 from cnagentos.services.model_engine import ModelEngineService
 
 
@@ -153,10 +156,10 @@ async def connection_test(
         raise ApiError(400, "VALIDATION_ERROR", "流式测试请使用 /stream 端点")
     service = service_for(request, session, context)
     data = await service.connection_test(model_id, payload)
-    return success_response(request, {"data": data})
+    return success_response(request, data)
 
 
-@router.post("/models/{model_id}/connection-tests/stream")
+@router.post("/models/{model_id}/connection-tests/stream", dependencies=[Depends(require_csrf)])
 async def connection_test_stream(
     model_id: str,
     payload: ConnectionTestRequest,
@@ -165,21 +168,8 @@ async def connection_test_stream(
     context: ModelTester,
 ):
     service = service_for(request, session, context)
-    model = await service.session.get(
-        __import__("cnagentos.models.entities", fromlist=["ModelConfig"]).ModelConfig, model_id
-    )
-    if model is None:
-        raise ApiError(404, "NOT_FOUND", "模型配置不存在")
-    if model.status != "active":
-        raise ApiError(409, "INVALID_STATE", "模型未启用，无法测试")
-    from cnagentos.models.entities import ModelCallLog
-    from uuid import uuid4
-    from datetime import datetime
-    from cnagentos.security import decrypt
+    model, call_log, api_key = await service.connection_test_stream(model_id, payload)
 
-    api_key = decrypt(model.credential_ciphertext)
-    import httpx
-    import json
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -189,21 +179,9 @@ async def connection_test_stream(
         "messages": [{"role": "user", "content": payload.message}],
         "stream": True,
     }
-    call_log = ModelCallLog(
-        id=str(uuid4()),
-        model_config_id=model.id,
-        caller_user_id=context.user.id,
-        purpose="connection_test",
-        streamed=True,
-        status="running",
-        started_at=datetime.utcnow(),
-    )
-    service.session.add(call_log)
-    await service.session.flush()
-    import time
     start_time = time.monotonic()
 
-    async def generate():
+    async def generate() -> AsyncIterator[str]:
         nonlocal call_log
         full_reply = ""
         try:
@@ -229,16 +207,22 @@ async def connection_test_stream(
                     latency_ms = int((time.monotonic() - start_time) * 1000)
                     call_log.status = "succeeded"
                     call_log.latency_ms = latency_ms
-                    call_log.finished_at = datetime.utcnow()
-                    await service.session.commit()
+                    call_log.finished_at = utc_now()
+                    usage = {
+                        "prompt_tokens": call_log.prompt_tokens,
+                        "completion_tokens": call_log.completion_tokens,
+                        "total_tokens": call_log.total_tokens,
+                    }
+                    yield f"data: {json.dumps({'event': 'completed', 'call_log_id': call_log.id, 'usage': usage})}\n\n"
+                    await session.commit()
                     yield f"data: [DONE]\n\n"
-        except Exception as exc:
+        except Exception:
             latency_ms = int((time.monotonic() - start_time) * 1000)
             call_log.status = "failed"
             call_log.error_code = "UPSTREAM_ERROR"
             call_log.latency_ms = latency_ms
-            call_log.finished_at = datetime.utcnow()
-            await service.session.commit()
+            call_log.finished_at = utc_now()
+            await session.commit()
             error_data = json.dumps({"error": {"code": "UPSTREAM_ERROR", "message": "流式响应出错"}})
             yield f"data: {error_data}\n\n"
             yield f"data: [DONE]\n\n"

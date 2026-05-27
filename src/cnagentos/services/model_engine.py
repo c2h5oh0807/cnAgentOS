@@ -1,13 +1,14 @@
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import httpx
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from cnagentos.api import ApiError
-from cnagentos.models.entities import ModelCallLog, ModelConfig, User
+from cnagentos.models.entities import ModelCallLog, ModelConfig, User, utc_now
 from cnagentos.schemas import (
     ConnectionTestRequest,
     ModelCallFilters,
@@ -182,11 +183,6 @@ class ModelEngineService:
             decrypt(model.credential_ciphertext)
         except Exception:
             raise ApiError(422, "MODEL_UNAVAILABLE", "默认模型必须配置有效凭据")
-        await self.session.scalars(
-            select(ModelConfig).where(
-                ModelConfig.is_default.is_(True), ModelConfig.id != model_id
-            )
-        )
         results = (
             await self.session.scalars(
                 select(ModelConfig).where(ModelConfig.is_default.is_(True))
@@ -233,7 +229,7 @@ class ModelEngineService:
             purpose="connection_test",
             streamed=streamed,
             status="running",
-            started_at=datetime.utcnow(),
+            started_at=utc_now(),
         )
         self.session.add(call_log)
         await self.session.flush()
@@ -247,7 +243,7 @@ class ModelEngineService:
                 )
             latency_ms = int((time.monotonic() - start_time) * 1000)
             call_log.latency_ms = latency_ms
-            call_log.finished_at = datetime.utcnow()
+            call_log.finished_at = utc_now()
             if response.status_code == 200:
                 data = response.json()
                 call_log.status = "succeeded"
@@ -287,14 +283,14 @@ class ModelEngineService:
         except httpx.TimeoutException:
             call_log.status = "failed"
             call_log.error_code = "TIMEOUT"
-            call_log.finished_at = datetime.utcnow()
+            call_log.finished_at = utc_now()
             call_log.latency_ms = int((time.monotonic() - start_time) * 1000)
             await self.session.commit()
             raise ApiError(504, "UPSTREAM_ERROR", "模型服务响应超时")
         except httpx.RequestError as exc:
             call_log.status = "failed"
             call_log.error_code = "CONNECTION_ERROR"
-            call_log.finished_at = datetime.utcnow()
+            call_log.finished_at = utc_now()
             call_log.latency_ms = int((time.monotonic() - start_time) * 1000)
             await self.session.commit()
             raise ApiError(502, "UPSTREAM_ERROR", f"无法连接到模型服务: {type(exc).__name__}")
@@ -315,6 +311,29 @@ class ModelEngineService:
             "usage": result["usage"],
             "latency_ms": call_log.latency_ms,
         }
+
+    async def connection_test_stream(
+        self, model_id: str, payload: ConnectionTestRequest
+    ) -> tuple[ModelConfig, ModelCallLog, str]:
+        model = await self.session.get(ModelConfig, model_id)
+        if model is None:
+            raise ApiError(404, "NOT_FOUND", "模型配置不存在")
+        if model.status != "active":
+            raise ApiError(409, "INVALID_STATE", "模型未启用，无法测试")
+        from cnagentos.security import decrypt
+        api_key = decrypt(model.credential_ciphertext)
+        call_log = ModelCallLog(
+            id=str(uuid4()),
+            model_config_id=model.id,
+            caller_user_id=self.actor_id,
+            purpose="connection_test",
+            streamed=True,
+            status="running",
+            started_at=utc_now(),
+        )
+        self.session.add(call_log)
+        await self.session.flush()
+        return model, call_log, api_key
 
     async def list_call_logs(
         self, page: int, page_size: int, filters: ModelCallFilters
@@ -340,6 +359,7 @@ class ModelEngineService:
         logs = (
             await self.session.scalars(
                 select(ModelCallLog)
+                .options(selectinload(ModelCallLog.model_config))
                 .where(*conditions)
                 .order_by(ModelCallLog.started_at.desc())
                 .offset((page - 1) * page_size)
@@ -348,7 +368,7 @@ class ModelEngineService:
         ).all()
         data = []
         for log in logs:
-            model = await self.session.get(ModelConfig, log.model_config_id) if log.model_config_id else None
+            model = log.model_config if log.model_config_id else None
             data.append({
                 "id": log.id,
                 "model": {"id": model.id, "name": model.name} if model else None,
