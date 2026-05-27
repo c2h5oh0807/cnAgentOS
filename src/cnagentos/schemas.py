@@ -95,3 +95,35 @@ class AuditFilters(PageParams):
     result: str | None = None
     created_from: datetime | None = None
     created_to: datetime | None = None
+
+
+class ModelConfigCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    provider_type: str = Field(default="openai_compatible", max_length=40)
+    model_name: str = Field(min_length=1, max_length=120)
+    base_url: str = Field(min_length=1, max_length=512)
+    api_key: str = Field(min_length=1)
+    timeout_seconds: int = Field(default=60, gt=0, le=300)
+    description: str | None = None
+
+
+class ModelConfigUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    model_name: str | None = Field(default=None, min_length=1, max_length=120)
+    base_url: str | None = Field(default=None, min_length=1, max_length=512)
+    api_key: str | None = Field(default=None, min_length=1)
+    timeout_seconds: int | None = Field(default=None, gt=0, le=300)
+    description: str | None = None
+
+
+class ConnectionTestRequest(BaseModel):
+    message: str = Field(default="请回复连接正常", min_length=1, max_length=1000)
+    stream: bool = False
+
+
+class ModelCallFilters(PageParams):
+    model_id: str | None = None
+    purpose: str | None = None
+    status: str | None = None
+    started_from: datetime | None = None
+    started_to: datetime | None = None

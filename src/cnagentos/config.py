@@ -17,6 +17,11 @@ class Settings(BaseSettings):
         validation_alias="CSRF_SECRET",
         min_length=16,
     )
+    encryption_key: str = Field(
+        default="dev-only-32-byte-key-for-testing",
+        validation_alias="ENCRYPTION_KEY",
+        min_length=32,
+    )
     session_hours: int = Field(
         default=8, validation_alias="SESSION_HOURS", gt=0, le=720
     )
@@ -33,12 +38,12 @@ class Settings(BaseSettings):
         return self.environment.lower() == "production" or self.cookie_secure
 
     @model_validator(mode="after")
-    def production_must_set_secret(self):
-        if (
-            self.environment.lower() == "production"
-            and self.csrf_secret == "development-only-change-me"
-        ):
-            raise ValueError("production requires an explicit CSRF_SECRET")
+    def production_must_set_secrets(self):
+        if self.environment.lower() == "production":
+            if self.csrf_secret == "development-only-change-me":
+                raise ValueError("production requires an explicit CSRF_SECRET")
+            if self.encryption_key == "dev-only-32-byte-key-for-testing":
+                raise ValueError("production requires an explicit ENCRYPTION_KEY")
         return self
 
 

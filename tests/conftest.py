@@ -29,6 +29,7 @@ async def app():
         DATABASE_URL=TEST_DATABASE_URL,
         CSRF_SECRET="integration-test-csrf-secret-value",
         APP_ENV="development",
+        ENCRYPTION_KEY="integration-test-encryption-key-32b",
     )
     application = create_app(settings)
     async with application.state.engine.begin() as connection:
