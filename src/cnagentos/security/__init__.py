@@ -8,6 +8,17 @@ from pwdlib import PasswordHash
 
 from cnagentos.api import ApiError
 
+from .cipher import decrypt, encrypt, generate_mask, init_cipher, InvalidToken
+
+__all__ = [
+    "decrypt",
+    "encrypt",
+    "generate_mask",
+    "init_cipher",
+    "InvalidToken",
+    "tokens_match",
+]
+
 
 PASSWORD_MIN_LENGTH = 12
 PASSWORD_MAX_LENGTH = 128
