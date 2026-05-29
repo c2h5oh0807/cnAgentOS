@@ -21,7 +21,7 @@ FUNCTIONS = [
     ("watch", "智能瞭望", None, None, "file-search", 20, None),
     (
         "watch_sources",
-        "数据源管理",
+        "数据源与规则",
         "watch",
         "/admin/watch-sources",
         "file-search",
@@ -40,7 +40,7 @@ FUNCTIONS = [
     ("data", "数据仓库", None, None, "activity", 30, None),
     (
         "data_items",
-        "知识库内容",
+        "内容治理",
         "data",
         "/admin/knowledge-items",
         "file-search",
@@ -92,7 +92,8 @@ def upgrade() -> None:
                 sa.text(
                     """
                     UPDATE functions
-                    SET name = :name,
+                    SET
+                        name = :name,
                         parent_id = :parent_id,
                         route_path = :route_path,
                         icon = :icon,

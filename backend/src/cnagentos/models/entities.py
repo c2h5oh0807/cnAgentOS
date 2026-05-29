@@ -351,6 +351,8 @@ class QaSession(Base):
         back_populates="session", cascade="all, delete-orphan"
     )
 
+    __table_args__ = (Index("ix_qa_sessions_user_updated", "user_id", "updated_at"),)
+
 
 class QaMessage(Base):
     __tablename__ = "qa_messages"
@@ -371,14 +373,13 @@ class QaMessage(Base):
     )
 
     session: Mapped[QaSession] = relationship(back_populates="messages")
-    reply_to: Mapped["QaMessage | None"] = relationship(
-        remote_side=[id], back_populates="replies"
-    )
-    replies: Mapped[list["QaMessage"]] = relationship(back_populates="reply_to")
+    reply_to: Mapped["QaMessage | None"] = relationship(remote_side=[id])
     model_call_log: Mapped[ModelCallLog | None] = relationship()
     citations: Mapped[list["QaCitation"]] = relationship(
-        back_populates="message", cascade="all, delete-orphan"
+        back_populates="answer_message", cascade="all, delete-orphan"
     )
+
+    __table_args__ = (Index("ix_qa_messages_session_created", "session_id", "created_at"),)
 
 
 class QaCitation(Base):
@@ -394,5 +395,5 @@ class QaCitation(Base):
     excerpt: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
-    message: Mapped[QaMessage] = relationship(back_populates="citations")
+    answer_message: Mapped[QaMessage] = relationship(back_populates="citations")
     knowledge_item: Mapped[KnowledgeItem] = relationship()
