@@ -4,7 +4,6 @@ Watch and Data API controllers.
 Provides endpoints for data sources, rules, collection tasks, and knowledge items.
 """
 
-import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Annotated, Any
@@ -33,7 +32,6 @@ from cnagentos.services.watch_and_data import WatchService
 logger = logging.getLogger(__name__)
 
 _background_tasks: list = []
-
 
 router = APIRouter(prefix="/api/v1/admin", tags=["watch-and-data"])
 WatchSourceManager = Annotated[AuthContext, Depends(require_permission("watch.sources.manage"))]
