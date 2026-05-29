@@ -1,5 +1,6 @@
 import asyncio
 import json
+from uuid import uuid4
 
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -488,6 +489,19 @@ async def test_concurrent_disable_preserves_system_admin_access(client, admin_se
 
 
 async def test_audit_logs_filtering(client, admin_session):
+    # 先创建一个用户以生成审计日志
+    create_resp = await client.post(
+        "/api/v1/admin/users",
+        headers={"X-CSRF-Token": admin_session},
+        json={
+            "username": f"audit_test_user_{uuid4().hex[:8]}",
+            "display_name": "审计测试用户",
+            "password": "Test-password-123",
+        },
+    )
+    assert create_resp.status_code == 201
+
+    # 验证审计日志过滤
     logs = await client.get(
         "/api/v1/admin/audit-logs",
         params={"action": "user.created", "result": "succeeded"},
