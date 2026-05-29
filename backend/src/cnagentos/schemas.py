@@ -196,3 +196,48 @@ class KnowledgeItemFilters(PageParams):
     status: str | None = None
     collected_from: datetime | None = None
     collected_to: datetime | None = None
+
+
+# =============================================================================
+# 智能问数 (Question Answering)
+# =============================================================================
+
+class QASessionCreate(BaseModel):
+    title: str | None = Field(default=None, max_length=256)
+
+
+class QASessionUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=256)
+    status: str | None = None
+
+    @model_validator(mode="after")
+    def ensure_change(self):
+        if self.title is None and self.status is None:
+            raise ValueError("至少提交一个可修改字段")
+        return self
+
+
+class QASessionFilters(PageParams):
+    q: str | None = None
+
+
+class QAQuestionRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+
+class QACitationSummary(BaseModel):
+    knowledge_item_id: str
+    rank: int
+    title: str | None = None
+    source_name: str | None = None
+    excerpt: str
+    current_status: str | None = None
+
+
+class QAMessageSummary(BaseModel):
+    id: str
+    role: str
+    content: str
+    status: str
+    created_at: datetime
+    citations: list[QACitationSummary] = Field(default_factory=list)

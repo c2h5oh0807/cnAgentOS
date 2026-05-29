@@ -198,6 +198,7 @@ class ModelEngineService:
         for m in results:
             m.is_default = False
         model.is_default = True
+        await self.session.flush()  # 确保所有 is_default 更新都被提交
         await self._audit(
             "model.default_changed",
             "model_config",

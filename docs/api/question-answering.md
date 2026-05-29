@@ -33,6 +33,24 @@
 
 响应 `201`：返回新建会话对象。
 
+### `GET /api/v1/qa/sessions/{session_id}`
+
+权限：`qa.use` 且会话属于当前用户。
+
+返回单个会话详情：
+
+```json
+{
+  "data": {
+    "id": "uuid",
+    "title": "最近农业新闻",
+    "status": "active",
+    "updated_at": "2026-05-27T00:00:00Z",
+    "created_at": "2026-05-27T00:00:00Z"
+  }
+}
+```
+
 ### `PATCH /api/v1/qa/sessions/{session_id}`
 
 权限：`qa.use` 且会话属于当前用户。

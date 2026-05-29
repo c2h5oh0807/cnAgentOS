@@ -42,6 +42,9 @@ SYSTEM_FUNCTIONS = [
     ("admin_model_engine", "模型引擎", None, None, "cpu", 50, None),
     ("admin_models", "模型配置", "admin_model_engine", "/admin/models", "settings", 10, "models.view"),
     ("admin_model_calls", "调用记录", "admin_model_engine", "/admin/model-calls", "activity", 20, "models.view"),
+    ("qa", "智能问数", None, None, "chat", 60, None),
+    ("qa_chat", "智能问数", "qa", "/qa/chat", "chat", 10, "qa.use"),
+    ("qa_history", "问数历史", "qa", "/qa/history", "history", 20, "qa.use"),
 ]
 
 

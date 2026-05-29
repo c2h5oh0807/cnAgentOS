@@ -264,9 +264,6 @@ async def test_create_source_validates_https(client, admin_session):
         headers={"X-CSRF-Token": admin_session},
     )
     assert response.status_code == 422
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 
 
 async def test_audit_log_records_source_creation(client, admin_session):
@@ -284,5 +281,3 @@ async def test_audit_log_records_source_creation(client, admin_session):
     # Either 201 (success) or 422 (DNS resolution failure in test) is acceptable
     # The important thing is HTTP validation works
     assert response.status_code in (201, 422)
-=======
->>>>>>> 3f6404d (fix(watch-data): address code review comments from PR #15)

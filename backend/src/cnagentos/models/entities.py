@@ -328,3 +328,68 @@ class CollectionTaskItem(Base):
     task: Mapped[CollectionTask] = relationship(back_populates="knowledge_items")
     knowledge_item: Mapped[KnowledgeItem] = relationship(back_populates="task_items")
     source: Mapped[WatchSource | None] = relationship()
+
+
+# =============================================================================
+# 智能问数 (Question Answering)
+# =============================================================================
+
+class QASession(Base):
+    __tablename__ = "qa_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str | None] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    user: Mapped[User] = relationship()
+    messages: Mapped[list["QAMessage"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
+
+
+class QAMessage(Base):
+    __tablename__ = "qa_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("qa_sessions.id"), index=True)
+    role: Mapped[str] = mapped_column(String(20))
+    reply_to_id: Mapped[str | None] = mapped_column(ForeignKey("qa_messages.id"), nullable=True)
+    content: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="completed")
+    model_call_log_id: Mapped[str | None] = mapped_column(
+        ForeignKey("model_call_logs.id"), nullable=True
+    )
+    error_summary: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    session: Mapped[QASession] = relationship(back_populates="messages")
+    reply_to: Mapped["QAMessage | None"] = relationship()
+    model_call_log: Mapped[ModelCallLog | None] = relationship()
+    citations: Mapped[list["QACitation"]] = relationship(
+        back_populates="message", cascade="all, delete-orphan"
+    )
+
+
+class QACitation(Base):
+    __tablename__ = "qa_citations"
+
+    answer_message_id: Mapped[str] = mapped_column(
+        ForeignKey("qa_messages.id"), primary_key=True
+    )
+    knowledge_item_id: Mapped[str] = mapped_column(
+        ForeignKey("knowledge_items.id"), primary_key=True
+    )
+    rank: Mapped[int] = mapped_column(Integer)
+    excerpt: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    message: Mapped[QAMessage] = relationship(back_populates="citations")
+    knowledge_item: Mapped[KnowledgeItem] = relationship()

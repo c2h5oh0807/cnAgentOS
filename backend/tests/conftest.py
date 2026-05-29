@@ -14,8 +14,9 @@ ADMIN_DATABASE_URL = "postgresql+asyncpg://cnagentos:cnagentos_dev@127.0.0.1:543
 ADMIN_PASSWORD = "Admin-password-123"
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="function")
 async def app():
+    """每个测试函数创建新的应用实例"""
     admin_engine = create_async_engine(ADMIN_DATABASE_URL, isolation_level="AUTOCOMMIT")
     async with admin_engine.connect() as connection:
         exists = await connection.scalar(
@@ -43,8 +44,9 @@ async def app():
     await application.state.engine.dispose()
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="function")
 async def client(app):
+    """每个测试函数使用新的 HTTP 客户端"""
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://testserver"
     ) as http_client:
@@ -53,6 +55,7 @@ async def client(app):
 
 @pytest_asyncio.fixture(scope="function")
 async def admin_session(client):
+    """每个测试函数重新登录获取新的 CSRF token"""
     response = await client.post(
         "/api/v1/auth/login",
         json={"username": "root", "password": ADMIN_PASSWORD},
