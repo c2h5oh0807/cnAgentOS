@@ -4,6 +4,7 @@ Watch and Data API controllers.
 Provides endpoints for data sources, rules, collection tasks, and knowledge items.
 """
 
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Annotated, Any
@@ -284,10 +285,20 @@ async def run_task(
 async def _execute_task_background(task_id: str, sessionmaker) -> None:
     """Background task that creates its own session."""
     from cnagentos.services.watch_and_data import WatchService
+<<<<<<< HEAD
     from cnagentos.services.bootstrap import ensure_system_task_user
     async with sessionmaker() as session:
         try:
             actor = await ensure_system_task_user(session)
+=======
+    from cnagentos.models.entities import User
+    from sqlalchemy import select
+    async with sessionmaker() as session:
+        try:
+            actor = await session.get(User, "system-task")
+            if actor is None:
+                actor = await session.scalar(select(User).limit(1))
+>>>>>>> 3f6404d (fix(watch-data): address code review comments from PR #15)
             service = WatchService(session, actor, None)
             await service.execute_task(task_id)
         except Exception:
