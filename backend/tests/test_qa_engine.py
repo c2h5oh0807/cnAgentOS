@@ -481,7 +481,7 @@ async def test_streaming_qa_success(monkeypatch, client, admin_session):
 
 
 async def test_streaming_qa_error_handling(monkeypatch, client, admin_session):
-    """测试流式问答错误处理"""
+    """测试流式问答错误处理 - 验证错误时数据库状态正确更新"""
     from openai import APIStatusError
     
     reset_fake_qa_provider()
@@ -516,6 +516,15 @@ async def test_streaming_qa_error_handling(monkeypatch, client, admin_session):
     assert response.status_code == 200
     assert "event: error" in text
     assert "HTTP_503" in text or "upstream" in text.lower()
+    
+    # 验证数据库状态已更新为 failed（修复 _handle_stream_error 死代码问题）
+    messages_resp = await client.get(f"/api/v1/qa/sessions/{session_id}/messages")
+    messages_data = messages_resp.json()
+    
+    answer_msg = next(m for m in messages_data["data"] if m["role"] == "assistant")
+    assert answer_msg["status"] == "failed", f"期望 status=failed，实际 {answer_msg['status']}"
+    assert answer_msg["error_summary"] is not None, "错误摘要应该被记录"
+    assert "模型" in answer_msg["error_summary"] or "upstream" in answer_msg["error_summary"].lower()
 
 
 async def test_cannot_ask_in_archived_session(client, admin_session):

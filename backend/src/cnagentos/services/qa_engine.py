@@ -153,6 +153,7 @@ class QAEngineService:
             "role": msg.role,
             "content": msg.content,
             "status": msg.status,
+            "error_summary": msg.error_summary,
             "created_at": msg.created_at,
             "citations": citations,
         }
