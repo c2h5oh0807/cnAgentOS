@@ -1,6 +1,23 @@
+import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+
+class CollectionTaskStatus(str, enum.Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    PARTIAL_FAILED = "partial_failed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class KnowledgeItemStatus(str, enum.Enum):
+    AVAILABLE = "available"
+    EXCLUDED = "excluded"
+    ARCHIVED = "archived"
+
+
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from cnagentos.db import Base
@@ -251,7 +268,19 @@ class CollectionTask(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
-    status: Mapped[str] = mapped_column(String(20), default="pending")
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default=CollectionTaskStatus.PENDING.value,
+        nullable=False,
+        info={"enum_class": CollectionTaskStatus},
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'succeeded', 'partial_failed', 'failed', 'cancelled')",
+            name="ck_collection_task_status"
+        ),
+    )
     trigger_type: Mapped[str] = mapped_column(String(20), default="manual")
     source_count: Mapped[int] = mapped_column(Integer, default=0)
     item_success_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -300,7 +329,19 @@ class KnowledgeItem(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     content_hash: Mapped[str] = mapped_column(String(64))
-    status: Mapped[str] = mapped_column(String(20), default="available")
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default=KnowledgeItemStatus.AVAILABLE.value,
+        nullable=False,
+        info={"enum_class": KnowledgeItemStatus},
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('available', 'excluded', 'archived')",
+            name="ck_knowledge_item_status"
+        ),
+    )
     reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
