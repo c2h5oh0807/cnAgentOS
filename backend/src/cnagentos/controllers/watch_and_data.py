@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 _background_tasks: list = []
 
-
 router = APIRouter(prefix="/api/v1/admin", tags=["watch-and-data"])
 WatchSourceManager = Annotated[AuthContext, Depends(require_permission("watch.sources.manage"))]
 WatchTaskRunner = Annotated[AuthContext, Depends(require_permission("watch.tasks.run"))]

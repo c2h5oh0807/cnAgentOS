@@ -330,6 +330,10 @@ class CollectionTaskItem(Base):
     source: Mapped[WatchSource | None] = relationship()
 
 
+# =============================================================================
+# 智能问数 (Question Answering)
+# =============================================================================
+
 class QaSession(Base):
     __tablename__ = "qa_sessions"
 

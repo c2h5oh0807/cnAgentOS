@@ -5,6 +5,10 @@ Revises: 0006_phase2_navigation_entries, 0006_phase2_watch_data
 Create Date: 2026-05-29
 """
 
+from alembic import op
+import sqlalchemy as sa
+
+
 revision = "0007_merge_phase2_heads"
 down_revision = ("0006_phase2_navigation_entries", "0006_phase2_watch_data")
 branch_labels = None
