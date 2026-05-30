@@ -378,20 +378,36 @@ class QAEngineService:
                 yield "data: [DONE]\n\n"
                 
             except APIStatusError as exc:
+                await self._handle_stream_error(
+                    answer_message.id, call_log.id, start_time,
+                    f"HTTP_{exc.status_code}", "上游模型服务返回错误"
+                )
                 yield self._stream_error_event(
                     f"HTTP_{exc.status_code}", "上游模型服务返回错误"
                 )
                 yield "data: [DONE]\n\n"
-                
+
             except APITimeoutError:
+                await self._handle_stream_error(
+                    answer_message.id, call_log.id, start_time,
+                    "TIMEOUT", "模型服务响应超时"
+                )
                 yield self._stream_error_event("TIMEOUT", "模型服务响应超时")
                 yield "data: [DONE]\n\n"
-                
+
             except APIConnectionError:
+                await self._handle_stream_error(
+                    answer_message.id, call_log.id, start_time,
+                    "CONNECTION_ERROR", "无法连接到模型服务"
+                )
                 yield self._stream_error_event("CONNECTION_ERROR", "无法连接到模型服务")
                 yield "data: [DONE]\n\n"
-                
+
             except Exception:
+                await self._handle_stream_error(
+                    answer_message.id, call_log.id, start_time,
+                    "UPSTREAM_ERROR", "流式响应出错"
+                )
                 yield self._stream_error_event("UPSTREAM_ERROR", "流式响应出错")
                 yield "data: [DONE]\n\n"
         
