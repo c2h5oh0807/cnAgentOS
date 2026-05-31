@@ -1,5 +1,22 @@
 # 首版数据库契约
 
+## 0. 数据库兼容性（Phase 5 定案）
+
+开发环境默认数据库为 **SQLite（aiosqlite）**，PostgreSQL 保留可选，MySQL 支持留待 Phase 10 验证。
+
+| 数据库 | 驱动 | URL 示例 | 状态 |
+|--------|------|---------|------|
+| SQLite | `aiosqlite` | `sqlite+aiosqlite:///data.db`（文件）或 `sqlite+aiosqlite://`（内存） | 默认开发库 |
+| PostgreSQL | `asyncpg` | `postgresql+asyncpg://user:pass@host/db` | 可选 |
+| MySQL | `asyncmy` | `mysql+asyncmy://user:pass@host/db` | 待验证（Phase 10） |
+
+**关键兼容策略**：
+
+- `utc_now()` 返回无时区 naive UTC datetime，避免 SQLite 不支持时区存储导致 `TypeError`。
+- 所有 `DateTime(timezone=True)` 列定义保持不变，但 `utc_now()` 返回 naive 值。
+- PostgreSQL 局部唯一索引（`postgresql_where`）已被移除，唯一性由应用层保障。
+- 迁移测试（`test_migrations.py`）默认对 SQLite 运行；设置 `DATABASE_URL` 环境变量可切换目标。
+
 ## 1. 设计约定
 
 本文定义正式重写版本的数据模型，不继承原型数据库。实现可选择适合 Python 应用的关系型数据库和迁移工具，但必须保持本文的业务字段、关系和约束语义。
@@ -319,13 +336,28 @@
 | `ip_address` | string | nullable | 来源地址 |
 | `created_at` | datetime | NOT NULL | 发生时间 |
 
-## 8. 关键索引
+## 8. Phase 6-9 扩展实体
+
+以下实体属于课程任务书扩展范围，实体定义和关系在 Phase 5 已冻结。迁移将在各自 Phase 按以下顺序添加：
+
+| 顺序 | Phase | 新增表 |
+|------|-------|--------|
+| 0010 | 6 | `contacts`, `friend_requests`, `conversations`, `conversation_members`, `messages`, `message_read_receipts`, `file_blobs`, `files` |
+| 0011 | 7 | `digital_employees`, `employee_tool_bindings`, `tools`, `tool_invocation_logs` |
+| 0012 | 8 | `sentiment_tasks`, `sentiment_reports` |
+| 0013 | 9 | `scheduled_tasks`, `task_execution_logs` |
+
+详细字段定义和关系见 `docs/context/decisions.md`「Phase 5 冻结 Phase 6-9 权限代码与领域模型边界」一节。完整业务规则见 `docs/database/data-rules.md`。
+
+所有 Phase 6-9 迁移脚本必须使用跨数据库兼容的 SQLAlchemy 构造，不得使用 `postgresql_where` 等数据库特定语法。
+
+## 9. 关键索引
 
 - `users(username)` 唯一索引。
 - `auth_sessions(token_hash)` 唯一索引和 `auth_sessions(user_id, expires_at)` 查询索引。
 - `roles(code)`、`permissions(code)` 唯一索引。
 - `functions(code)` 唯一索引与 `functions(parent_id, sort_order)` 导航查询索引。
-- `model_configs(is_default)` 对启用默认记录建立唯一约束或等价事务校验。
+- `model_configs(is_default)` 由应用层保障唯一性（Phase 5 移除了 PostgreSQL 局部唯一索引）。
 - `watch_rules(source_id, status)`、`collection_tasks(status, created_at)` 查询索引。
 - `knowledge_items(source_id, status, collected_at)` 与去重唯一索引。
 - `collection_task_items(task_id)` 与 `collection_task_items(knowledge_item_id, created_at)` 查询索引。

@@ -10,6 +10,7 @@ from cnagentos.controllers.auth import router as auth_router
 from cnagentos.controllers.model_engine import router as model_engine_router
 from cnagentos.controllers.watch_and_data import router as watch_data_router, _background_tasks
 from cnagentos.controllers.qa import router as qa_router
+from cnagentos.controllers.ws import router as ws_router
 from cnagentos.db import build_engine, build_sessionmaker
 from cnagentos.security import init_cipher
 

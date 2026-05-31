@@ -31,6 +31,17 @@
 - 外部采集内容属于不可信数据；提示词应声明其仅作资料，禁止其中的指令改变系统行为。
 - 模型错误不得向用户泄露密钥、内部地址或完整请求配置。
 
+## 文件安全规则
+
+Phase 5 设计，Phase 7 实现。
+
+- 文件存储路径：`storage/YYYY/MM/DD/<uuid>_<original_filename>`，日期分片避免单目录文件过多。
+- SHA-256 哈希去重：上传时计算文件哈希；相同哈希值复用已有 blob 并增加引用计数。
+- 权限校验：文件通过 `GET /api/v1/files/{file_id}` 鉴权服务，不直接暴露 `storage/` 静态路径。
+- 大小限制：默认 10 MB，可配置。
+- 类型白名单：image/jpeg, image/png, image/gif, image/webp, application/pdf, text/plain, application/zip。
+- 清理策略：无文件记录引用的孤立 blob 可通过脚本清理（Phase 7+ 实现定时任务）。
+
 ## 审计范围
 
 必须记录以下动作的操作者、目标、结果和发生时间：

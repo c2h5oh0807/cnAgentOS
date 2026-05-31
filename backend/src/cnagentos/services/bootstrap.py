@@ -9,20 +9,47 @@ from cnagentos.security import hash_password
 
 
 SYSTEM_ROLE_CODE = "system_admin"
+DEFAULT_USER_ROLE_CODE = "default_user"
 PERMISSIONS = [
+    # Platform
     ("users.manage", "用户管理", "platform", "管理用户与账户状态"),
     ("roles.manage", "角色管理", "platform", "管理角色与角色权限映射"),
     ("functions.manage", "导航管理", "platform", "管理后台功能导航配置"),
+    ("audit.view", "查看审计", "platform", "查看审计记录"),
+    ("auth.register", "用户注册", "platform", "允许自助注册为普通用户"),
+    ("tools.view", "查看工具", "platform", "查看工具注册表"),
+    ("tools.manage", "管理工具", "platform", "注册、配置、启停工具"),
+    ("files.view", "查看文件", "platform", "查看文件管理"),
+    ("files.manage", "管理文件", "platform", "删除文件、管理存储"),
+    # Models
     ("models.view", "查看模型", "models", "查看模型配置与统计"),
     ("models.manage", "管理模型", "models", "新增、编辑、启停和设定默认模型"),
     ("models.test", "测试模型", "models", "发起模型测试调用"),
+    # Watch
     ("watch.sources.manage", "管理数据源", "watch", "管理数据源与规则"),
     ("watch.tasks.run", "运行采集", "watch", "发起采集任务"),
     ("watch.tasks.view", "查看采集", "watch", "查看任务与执行结果"),
+    # Data
     ("data.items.view", "查看内容", "data", "查看数据仓库内容"),
     ("data.items.manage", "治理内容", "data", "调整内容可用状态"),
+    # Q&A
     ("qa.use", "智能问数", "qa", "使用智能问数"),
-    ("audit.view", "查看审计", "platform", "查看审计记录"),
+    # Chat (Phase 6+)
+    ("chat.contacts.view", "查看联系人", "chat", "查看通讯录和联系人信息"),
+    ("chat.friends.request", "好友请求", "chat", "发送和接受好友请求"),
+    ("chat.groups.create", "创建群组", "chat", "创建群聊"),
+    ("chat.groups.manage", "管理群组", "chat", "管理群成员和群设置"),
+    ("chat.messages.send", "发送消息", "chat", "发送聊天消息"),
+    ("chat.files.upload", "上传文件", "chat", "在聊天中上传文件"),
+    # Digital Employees (Phase 7+)
+    ("employee.chat", "员工对话", "employee", "通过 @提及触发数字员工回复"),
+    ("employee.manage", "管理员工", "employee", "管理数字员工配置"),
+    # Sentiment Analysis (Phase 8+)
+    ("sentiment.view", "查看舆情", "sentiment", "查看舆情分析报告"),
+    ("sentiment.manage", "管理舆情", "sentiment", "运行分析任务、管理报告"),
+    # Automation (Phase 9+)
+    ("automation.view", "查看自动化", "automation", "查看定时任务"),
+    ("automation.manage", "管理自动化", "automation", "创建、编辑、启停定时任务"),
 ]
 SYSTEM_ROLE_PERMISSION_CODES = {item[0] for item in PERMISSIONS}
 SYSTEM_FUNCTIONS = [
@@ -72,6 +99,14 @@ SYSTEM_FUNCTIONS = [
         "data.items.view",
     ),
     ("qa", "智能问数", None, "/qa", "sparkles", 40, "qa.use"),
+    # Phase 6-9 extension navigation entries (added in Phase 5 as reference;
+    # actual activation happens in their respective phases):
+    # ("admin_chat_groups", "群管理", "admin", "/admin/chat-groups", "chat-dot-square", 50, "chat.groups.manage"),
+    # ("admin_files", "文件管理", "admin", "/admin/files", "folder-opened", 60, "files.view"),
+    # ("admin_employees", "数字员工", "admin", "/admin/digital-employees", "robot", 70, "employee.manage"),
+    # ("admin_tools", "工具管理", "admin", "/admin/tools", "tools", 80, "tools.manage"),
+    # ("admin_automation", "定时任务", "admin", "/admin/scheduled-tasks", "timer", 90, "automation.view"),
+    # ("admin_sentiment", "舆情分析", "admin", "/admin/sentiment", "data-analysis", 100, "sentiment.view"),
 ]
 
 
@@ -108,6 +143,20 @@ async def initialize_reference_data(session: AsyncSession) -> Role:
         link = await session.get(RolePermission, (system_role.id, permission.id))
         if link is None:
             session.add(RolePermission(role_id=system_role.id, permission_id=permission.id))
+
+    # Create the default_user role for self-registered users (Phase 6+)
+    default_role = await session.scalar(select(Role).where(Role.code == DEFAULT_USER_ROLE_CODE))
+    if default_role is None:
+        default_role = Role(
+            id=str(uuid4()),
+            code=DEFAULT_USER_ROLE_CODE,
+            name="普通用户",
+            description="自助注册用户的默认角色 (Phase 6 起使用)",
+            is_system=True,
+            status="active",
+        )
+        session.add(default_role)
+        await session.flush()
 
     function_ids: dict[str, str] = {}
     for code, name, parent_code, route_path, icon, sort_order, required_code in SYSTEM_FUNCTIONS:

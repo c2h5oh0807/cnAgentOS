@@ -241,3 +241,23 @@ class QAMessageSummary(BaseModel):
     status: str
     created_at: datetime
     citations: list[QACitationSummary] = Field(default_factory=list)
+
+
+# =============================================================================
+# User Registration (Phase 6+)
+# =============================================================================
+
+class RegisterRequest(BaseModel):
+    """Self-registration for new users. Endpoint implemented in Phase 6."""
+    username: str = Field(
+        min_length=4, max_length=30,
+        pattern=r"^[a-zA-Z][a-zA-Z0-9_-]{2,28}[a-zA-Z0-9]$",
+    )
+    display_name: str = Field(min_length=1, max_length=120)
+    password: str = Field(min_length=12, max_length=128)
+
+
+class RegisterResponse(BaseModel):
+    id: str
+    username: str
+    display_name: str

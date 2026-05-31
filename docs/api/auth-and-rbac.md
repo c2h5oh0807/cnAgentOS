@@ -90,6 +90,43 @@
 
 规则：服务端依据导航状态和当前用户权限过滤；导航结果不赋予额外接口权限。
 
+## 注册接口（Phase 6 实现）
+
+### `POST /api/v1/auth/register`
+
+调用方：注册页面。权限：公开接口（受速率限制）。
+
+请求：
+
+```json
+{
+  "username": "newuser",
+  "display_name": "新用户",
+  "password": "secure-password-123"
+}
+```
+
+响应 `201`：
+
+```json
+{
+  "data": {
+    "id": "uuid",
+    "username": "newuser",
+    "display_name": "新用户"
+  }
+}
+```
+
+规则：
+
+- `username`：4-30 字符，字母开头，允许字母/数字/下划线/连字符，唯一。
+- `password`：12-128 字符，仅前端/后端长度校验，不设复杂度规则。
+- 注册成功不自动登录，用户须返回登录页登录。
+- 注册后自动分配 `default_user` 角色。
+- 同一 IP 每小时最多注册 3 次（内存滑动窗口）。
+- 错误：`409 CONFLICT`（用户名已存在）、`400 VALIDATION_ERROR`、`429 RATE_LIMITED`。
+
 ## 用户管理接口
 
 ### `GET /api/v1/admin/users`

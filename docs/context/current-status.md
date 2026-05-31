@@ -4,9 +4,19 @@
 
 ## 当前阶段
 
-正式产品处于 **Phase 4（MVP 集成验收与交付）后端与 C 端集成验收收口** 阶段。
+正式产品处于 **Phase 5（课程扩展底座与多数据库定案）** 阶段。Phase 4 MVP 集成验收已完成，核心代码均已合并到 main。
 
-Phase 0 工程底座已落地并调整为单仓前后端分离结构：`backend/` 承载 FastAPI + SQLAlchemy AsyncSession + Alembic + PostgreSQL 后端 API，`frontend/` 承载 Vite Vue TypeScript + Pinia + Vue Router + Element Plus 前端；Docker Compose 继续在根目录提供开发数据库。后端进程只提供 API、健康检查和 OpenAPI 文档，不托管前端页面或构建产物。
+Phase 5 是设计与契约阶段，已完成：
+- **多数据库兼容**：开发环境默认切换至 SQLite（aiosqlite），PostgreSQL 保留可选。`utc_now()` 改为返回 naive datetime，`ModelConfig` PostgreSQL 局部唯一索引移除。`conftest.py` 和 `test_migrations.py` 已重写为跨数据库兼容。全量 120 项测试在 SQLite 下通过。
+- **注册契约**：`RegisterRequest` schema、`default_user` 系统角色、`auth.register` 权限代码已冻结。
+- **权限代码**：16 项 Phase 6-9 扩展权限代码已写入 `bootstrap.py`。
+- **WebSocket**：`/api/v1/ws` 端点、Cookie 鉴权、JSON 消息帧格式已建立。
+- **文件存储**：`FileStorageService` 骨架（SHA-256 去重、类型/大小校验、日期分片路径）。
+- **调度器**：APScheduler 骨架（AsyncIOScheduler + SQLAlchemyJobStore）。
+- **领域模型**：聊天/数字员工/工具/舆情/自动化/文件共 16 张表实体定义已冻结。
+- **前端架构**：`UserLayout.vue` 用户布局、`/qa` 移至 UserLayout、`/chat` 占位路由、Phase 6-9 管理端导航注释。
+
+Phase 0 工程底座已落地并调整为单仓前后端分离结构。`backend/` 承载 FastAPI + SQLAlchemy AsyncSession + Alembic + PostgreSQL 后端 API，`frontend/` 承载 Vite Vue TypeScript + Pinia + Vue Router + Element Plus 前端；Docker Compose 继续在根目录提供开发数据库。后端进程只提供 API、健康检查和 OpenAPI 文档，不托管前端页面或构建产物。
 
 Phase 1 A 已完成认证/RBAC/导航/审计后端实现和集成测试。Phase 1 B 已完成模型配置、凭据加密脱敏、连接测试、流式测试和调用统计，并由管理端页面调用正式 `/api/v1` 接口。Phase 2 A/B/C 已收口：采集安全组件、数据源/规则/采集任务/知识库治理后端 API、系统导航入口和 Vue 管理端页面均已实现，并通过后端全量 pytest、前端构建和前端单元测试验证。Phase 3 A/B/C 已完成问数安全地基、问数后端 API、SSE 回答、引用持久化和智能问数页面，进入 MVP 端到端验收修复阶段。
 
@@ -40,10 +50,13 @@ Phase 1 A 已完成认证/RBAC/导航/审计后端实现和集成测试。Phase 
 
 ## 下一里程碑
 
-Phase 4 进入 MVP 集成验收与交付收口，待完成：
-- A：复核权限矩阵、安全边界、审计完整性和发布配置。
-- B：复核迁移初始化、外部依赖失败策略和问数后端稳定性（已完成，待评审）。
-- C：执行 MVP 演示脚本、补齐端到端验证、修复界面/集成问题并汇总评审材料。
+Phase 5 已进入文档收尾与评审阶段，待完成：
+- 领域模型文档更新（schema.md / data-rules.md / modules.md）
+- 架构文档更新（security.md / system.md）
+- 实时通信协议文档（ws-chat.md）
+- Phase 5 分支 Code Review 并合并至 main
+
+Phase 5 完成后，Phase 6（即时通信核心）即可按冻结的实体边界和权限代码开始实现。
 
 ## 团队任务书后续范围
 

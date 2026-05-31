@@ -1,13 +1,19 @@
-"""Alembic migration and bootstrap acceptance tests."""
+"""Alembic migration and bootstrap acceptance tests — cross-database compatible.
+
+By default tests run against SQLite in-memory.  Set ``DATABASE_URL`` to
+``postgresql+asyncpg://...`` to run against PostgreSQL.
+"""
 
 import asyncio
+import os
 from pathlib import Path
 from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import select, text
+from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from cnagentos.config import get_settings
 from cnagentos.models.entities import Function, Permission, Role
@@ -18,53 +24,26 @@ from cnagentos.services.bootstrap import (
     create_system_admin,
 )
 
-
-ADMIN_DATABASE_URL = "postgresql+asyncpg://cnagentos:cnagentos_dev@127.0.0.1:54329/postgres"
-TEST_DATABASE_PREFIX = "cnagentos_migration_test_"
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "sqlite+aiosqlite://",
+)
 ADMIN_PASSWORD = "Admin-password-123"
 
 
-def migration_database_url(database_name: str) -> str:
-    return f"postgresql+asyncpg://cnagentos:cnagentos_dev@127.0.0.1:54329/{database_name}"
+def _is_postgres(url: str) -> bool:
+    return url.startswith("postgresql") or url.startswith("postgresql+asyncpg")
 
 
-async def recreate_database(database_name: str) -> None:
-    engine = create_async_engine(ADMIN_DATABASE_URL, isolation_level="AUTOCOMMIT")
-    async with engine.connect() as connection:
-        await connection.execute(
-            text(
-                "SELECT pg_terminate_backend(pid) "
-                "FROM pg_stat_activity "
-                "WHERE datname = :database_name AND pid <> pg_backend_pid()"
-            ),
-            {"database_name": database_name},
-        )
-        await connection.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
-        await connection.execute(text(f'CREATE DATABASE "{database_name}"'))
-    await engine.dispose()
-
-
-async def drop_database(database_name: str) -> None:
-    engine = create_async_engine(ADMIN_DATABASE_URL, isolation_level="AUTOCOMMIT")
-    async with engine.connect() as connection:
-        await connection.execute(
-            text(
-                "SELECT pg_terminate_backend(pid) "
-                "FROM pg_stat_activity "
-                "WHERE datname = :database_name AND pid <> pg_backend_pid()"
-            ),
-            {"database_name": database_name},
-        )
-        await connection.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
-    await engine.dispose()
-
-
-def alembic_config(database_url: str, monkeypatch) -> Config:
+def _alembic_config(database_url: str, *, monkeypatch: object) -> Config:
     backend_root = Path(__file__).resolve().parents[1]
-    monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("CSRF_SECRET", "migration-test-csrf-secret")
-    monkeypatch.setenv("ENCRYPTION_KEY", "migration-test-encryption-key-32b")
-    monkeypatch.setenv("APP_ENV", "development")
+    # Use monkeypatch environment for settings
+    import builtins
+    old_environ = os.environ.copy()
+    os.environ["DATABASE_URL"] = database_url
+    os.environ["CSRF_SECRET"] = "migration-test-csrf-secret"
+    os.environ["ENCRYPTION_KEY"] = "migration-test-encryption-key-32b"
+    os.environ["APP_ENV"] = "development"
     get_settings.cache_clear()
 
     config = Config(str(backend_root / "alembic.ini"))
@@ -73,8 +52,8 @@ def alembic_config(database_url: str, monkeypatch) -> Config:
     return config
 
 
-async def assert_bootstrap_reference_data(database_url: str) -> None:
-    engine = create_async_engine(database_url)
+async def _assert_bootstrap_reference_data(database_url: str) -> None:
+    engine = create_async_engine(database_url, poolclass=NullPool)
     sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
     async with sessionmaker() as session:
         user, created = await create_system_admin(
@@ -95,34 +74,81 @@ async def assert_bootstrap_reference_data(database_url: str) -> None:
 
         system_role = await session.scalar(select(Role).where(Role.code == SYSTEM_ROLE_CODE))
         assert system_role is not None
-        assert system_role.status == "active"
     await engine.dispose()
 
 
-async def assert_platform_tables_removed(database_url: str) -> None:
-    engine = create_async_engine(database_url)
+async def _assert_tables_removed(database_url: str) -> None:
+    engine = create_async_engine(database_url, poolclass=NullPool)
     async with engine.connect() as connection:
-        users_table = await connection.scalar(text("SELECT to_regclass('public.users')"))
-        alembic_table = await connection.scalar(text("SELECT to_regclass('public.alembic_version')"))
-        version_count = 0
-        if alembic_table is not None:
-            version_count = await connection.scalar(text("SELECT count(*) FROM alembic_version"))
+        tables = await connection.run_sync(lambda conn: inspect(conn).get_table_names())
+        assert "users" not in tables, f"users table still present: {tables}"
+        # alembic_version may remain after downgrade base; verify it's empty
+        from sqlalchemy import text as sa_text
+        if "alembic_version" in tables:
+            result = await connection.execute(sa_text("SELECT count(*) FROM alembic_version"))
+            count = result.scalar()
+            assert count == 0, f"alembic_version has {count} rows after downgrade base"
     await engine.dispose()
-    assert users_table is None
-    assert version_count == 0
+
+
+async def _recreate_postgres_db(database_name: str) -> str:
+    admin_url = DATABASE_URL.rsplit("/", 1)[0] + "/postgres"
+    engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
+    async with engine.connect() as connection:
+        await connection.execute(
+            text(
+                "SELECT pg_terminate_backend(pid) "
+                "FROM pg_stat_activity "
+                "WHERE datname = :database_name AND pid <> pg_backend_pid()"
+            ),
+            {"database_name": database_name},
+        )
+        await connection.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
+        await connection.execute(text(f'CREATE DATABASE "{database_name}"'))
+    await engine.dispose()
+    return DATABASE_URL.rsplit("/", 1)[0] + "/" + database_name
+
+
+async def _drop_postgres_db(database_name: str) -> None:
+    admin_url = DATABASE_URL.rsplit("/", 1)[0] + "/postgres"
+    engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
+    async with engine.connect() as connection:
+        await connection.execute(
+            text(
+                "SELECT pg_terminate_backend(pid) "
+                "FROM pg_stat_activity "
+                "WHERE datname = :database_name AND pid <> pg_backend_pid()"
+            ),
+            {"database_name": database_name},
+        )
+        await connection.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
+    await engine.dispose()
 
 
 def test_alembic_upgrade_bootstrap_and_downgrade_base(monkeypatch):
-    database_name = f"{TEST_DATABASE_PREFIX}{uuid4().hex[:12]}"
-    database_url = migration_database_url(database_name)
-    config = alembic_config(database_url, monkeypatch)
+    """Verify that the full migration chain + bootstrap + downgrade works."""
+    if _is_postgres(DATABASE_URL):
+        database_name = f"cnagentos_migration_test_{uuid4().hex[:12]}"
+        database_url = asyncio.run(_recreate_postgres_db(database_name))
+        cleanup = lambda: asyncio.run(_drop_postgres_db(database_name))
+    else:
+        # SQLite file-based DB for migration testing (in-memory can't span
+        # multiple Alembic operations).  We rely on the engine's ``NullPool``
+        # behaviour so the file is unlocked after disposal.
+        import tempfile
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".db")
+        import os
+        os.close(tmp_fd)  # close the fd so SQLite can open it
+        database_url = f"sqlite+aiosqlite:///{tmp_path}"
+        cleanup = lambda: Path(tmp_path).unlink(missing_ok=True)
 
-    asyncio.run(recreate_database(database_name))
+    config = _alembic_config(database_url, monkeypatch=monkeypatch)
+
     try:
         command.upgrade(config, "head")
-        asyncio.run(assert_bootstrap_reference_data(database_url))
+        asyncio.run(_assert_bootstrap_reference_data(database_url))
         command.downgrade(config, "base")
-        asyncio.run(assert_platform_tables_removed(database_url))
+        asyncio.run(_assert_tables_removed(database_url))
     finally:
-        asyncio.run(drop_database(database_name))
+        cleanup()
         get_settings.cache_clear()

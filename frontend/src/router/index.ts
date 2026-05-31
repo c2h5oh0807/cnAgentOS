@@ -9,6 +9,16 @@ const router = createRouter({
   routes: [
     { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { public: true } },
     {
+      path: '/',
+      component: () => import('@/layouts/UserLayout.vue'),
+      children: [
+        { path: '', redirect: '/qa' },
+        { path: 'qa', component: () => import('@/views/QaWorkspaceView.vue') },
+        { path: 'chat', component: () => import('@/views/ChatWorkspaceView.vue') },
+        { path: 'chat/contacts', component: () => import('@/views/ChatContactsView.vue') },
+      ],
+    },
+    {
       path: '/admin',
       component: () => import('@/layouts/AdminLayout.vue'),
       children: [
@@ -25,12 +35,7 @@ const router = createRouter({
         { path: 'audit-logs', component: () => import('@/views/admin/AuditLogsView.vue') },
       ],
     },
-    {
-      path: '/qa',
-      component: () => import('@/layouts/AdminLayout.vue'),
-      children: [{ path: '', component: () => import('@/views/QaWorkspaceView.vue') }],
-    },
-    { path: '/', name: 'home', component: EmptyRoute },
+    { path: '/home', name: 'home', component: EmptyRoute },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })
@@ -43,7 +48,7 @@ function firstNavigationRoute(session: ReturnType<typeof useSessionStore>): stri
     if (item.route_path) return item.route_path
     if (item.children?.length) stack.unshift(...item.children)
   }
-  return '/admin/users'
+  return '/qa'
 }
 
 router.beforeEach(async (to) => {

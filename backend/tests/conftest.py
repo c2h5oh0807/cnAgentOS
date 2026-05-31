@@ -1,4 +1,10 @@
-"""Test configuration and shared fixtures."""
+"""Test configuration and shared fixtures — cross-database compatible.
+
+Reads ``DATABASE_URL`` from the environment (default ``sqlite+aiosqlite://``).
+Also works with ``postgresql+asyncpg://...``.
+"""
+
+import os
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -11,30 +17,50 @@ from cnagentos.db import Base
 from cnagentos.services.bootstrap import create_system_admin
 
 
-TEST_DATABASE_URL = "postgresql+asyncpg://cnagentos:cnagentos_dev@127.0.0.1:54329/cnagentos_test"
-ADMIN_DATABASE_URL = "postgresql+asyncpg://cnagentos:cnagentos_dev@127.0.0.1:54329/postgres"
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "sqlite+aiosqlite://",
+)
 ADMIN_PASSWORD = "Admin-password-123"
 
 _db_initialized = False
+
+
+def _is_postgres(url: str) -> bool:
+    return url.startswith("postgresql") or url.startswith("postgresql+asyncpg")
 
 
 @pytest_asyncio.fixture(scope="function")
 async def app():
     """每个测试函数创建新的应用实例和数据库"""
     global _db_initialized
-    
-    # 创建测试数据库（如果不存在）
-    admin_engine = create_async_engine(ADMIN_DATABASE_URL, isolation_level="AUTOCOMMIT")
-    async with admin_engine.connect() as connection:
-        exists = await connection.scalar(
-            text("SELECT 1 FROM pg_database WHERE datname = 'cnagentos_test'")
-        )
-        if not exists:
-            await connection.execute(text("CREATE DATABASE cnagentos_test"))
-    await admin_engine.dispose()
+
+    if _is_postgres(DATABASE_URL):
+        # PostgreSQL: create test database if it doesn't exist
+        admin_url = DATABASE_URL.replace("/cnagentos_test", "/postgres")
+        if DATABASE_URL.endswith("_test"):
+            pass  # already targeted at test DB
+        else:
+            admin_url = DATABASE_URL.replace(
+                DATABASE_URL.rsplit("/", 1)[-1], "postgres"
+            )
+
+        admin_engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
+        async with admin_engine.connect() as connection:
+            exists = await connection.scalar(
+                text("SELECT 1 FROM pg_database WHERE datname = 'cnagentos_test'")
+            )
+            if not exists:
+                await connection.execute(text("CREATE DATABASE cnagentos_test"))
+        await admin_engine.dispose()
+
+        test_db_url = DATABASE_URL
+    else:
+        # SQLite: in-memory database — no admin setup needed
+        test_db_url = DATABASE_URL
 
     settings = Settings(
-        DATABASE_URL=TEST_DATABASE_URL,
+        DATABASE_URL=test_db_url,
         CSRF_SECRET="integration-test-csrf-secret-value",
         APP_ENV="development",
         ENCRYPTION_KEY="integration-test-encryption-key-32b",

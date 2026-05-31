@@ -110,6 +110,16 @@ data: {"code":"UPSTREAM_ERROR","message":"回答生成失败"}
 - 流式开始后的失败通过 `error` 事件表达，并将数据库中的执行记录标记为失败。
 - SSE 响应不得包含提示词、模型凭据或采集敏感配置。
 
-## 8. 审计要求
+## 8. WebSocket 协议
+
+聊天实时通信使用 WebSocket（Phase 6+），完整协议见 `docs/api/ws-chat.md`，以下为通用约定：
+
+- 端点：`ws://host/api/v1/ws`（开发） / `wss://host/api/v1/ws`（生产）
+- 鉴权：复用 HTTP 会话 Cookie，非浏览器客户端支持 `?token=` 回退
+- 消息帧格式：`{"type":"<event_type>","payload":{...},"id":"<optional_uuid>"}`
+- 心跳：服务端每 30s 发 ping，客户端 10s 内回复 pong
+- SSE 保留给 AI 流式推送，不替换为 WebSocket
+
+## 9. 审计要求
 
 执行权限配置、模型变更、来源或规则变更、采集任务发起、数据治理状态变更的成功或失败请求，均应写入审计记录。

@@ -77,10 +77,13 @@ async def load_context(
         .where(AuthSession.token_hash == hash_token(raw_token))
     )
     now = utc_now()
+    # Normalise DB timestamps that may be timezone-aware (PostgreSQL) or
+    # naive (SQLite) so they compare correctly with our naive ``now``.
+    expires_at = auth_session.expires_at.replace(tzinfo=None) if auth_session else now
     if (
         auth_session is None
         or auth_session.revoked_at is not None
-        or auth_session.expires_at <= now
+        or expires_at <= now
         or auth_session.user.status != "active"
     ):
         raise ApiError(401, "AUTH_REQUIRED", "登录状态已失效")
@@ -92,6 +95,8 @@ async def load_context(
     permissions = await get_permission_codes(session, auth_session.user_id)
 
     last_seen = auth_session.last_seen_at
+    if last_seen is not None:
+        last_seen = last_seen.replace(tzinfo=None)  # normalise for comparison
     if last_seen is None or (now - last_seen).total_seconds() >= 300:
         auth_session.last_seen_at = now
         await session.commit()

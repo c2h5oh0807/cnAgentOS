@@ -129,3 +129,36 @@
 **原因**：扩展任务已经由课程任务书明确要求，但其依赖和数据模型显著大于现有 MVP。将其放入独立阶段可以保留一条可演示的稳定基线，并让聊天、舆情、交互增强和数据库兼容改造按依赖顺序落地。
 
 **影响**：Phase 4 完成后先处理数据库兼容、注册、实时通信和文件存储等基础决策。扩展阶段新增实体或接口时，仍需先更新正式数据库、API、安全和上下文文档。
+
+## 2026-05-31：Phase 5 确立 SQLite 默认开发数据库与扩展架构地基
+
+**决定**：开发环境默认数据库从 PostgreSQL 切换至 SQLite（aiosqlite），PostgreSQL 保留为可选。`utc_now()` 改为返回 naive datetime 以兼容不支持时区存储的数据库。`ModelConfig` 的 PostgreSQL 局部唯一索引 (`postgresql_where`) 移除，唯一性改由服务层保障。
+
+**原因**：课程任务书要求默认 SQLite 且支持 MySQL 切换；SQLite 消除 Docker Compose 依赖、降低三人开发入门成本；异步 SQLAlchemy 2 的 ORM 层本已是数据库无关的。
+
+**影响**：`uv run pytest tests/` 默认以 SQLite 运行；`DATABASE_URL=postgresql+asyncpg://...` 环境变量可切回 PostgreSQL。
+
+## 2026-05-31：Phase 5 选定 WebSocket 为聊天实时通信协议
+
+**决定**：聊天采用 WebSocket 而非 SSE + REST 轮询。理由：双向推送、FastAPI 原生支持、可复用 Cookie 鉴权、支持断线重连。SSE 保留给 AI 流式推送。
+
+**影响**：新增 `ws://host/api/v1/ws` 端点，消息帧格式为 `{"type":"...","payload":{...},"id":"..."}`。协议契约在 `docs/api/ws-chat.md`。
+
+## 2026-05-31：Phase 5 冻结 Phase 6-9 权限代码与领域模型边界
+
+**决定**：定义 16 项聊天、数字员工、工具、舆情、自动化和文件管理权限代码，写入 `bootstrap.py` 但仅赋给 `system_admin` 角色。新增 `default_user` 系统角色，Phase 6 开放注册后分配给自助注册用户。
+
+聊天领域实体（6 表）：`contacts`、`friend_requests`、`conversations`、`conversation_members`、`messages`、`message_read_receipts`。
+数字员工（2 表）：`digital_employees`、`employee_tool_bindings`。
+工具（2 表）：`tools`、`tool_invocation_logs`。
+舆情（2 表）：`sentiment_tasks`、`sentiment_reports`。
+自动化（2 表）：`scheduled_tasks`、`task_execution_logs`。
+文件（2 表）：`file_blobs`、`files`。
+
+**影响**：实体边界冻结在 `docs/database/schema.md`；后续 Phase 6-9 按此实体关系和迁移顺序新增 Alembic 迁移，不得在表中随意增删字段。
+
+## 2026-05-31：Phase 5 选定 APScheduler 为定时调度器
+
+**决定**：使用 APScheduler（AsyncIOScheduler + SQLAlchemyJobStore）实现定时采集和工作流调度。理由：cron 表达式、持久化作业、SQLAlchemy 支持跨数据库、AsyncIOScheduler 与 FastAPI 异步兼容。
+
+**影响**：新增 `apscheduler>=3.10.0` 依赖；`scheduler.py` 初始化骨架已创建；完整调度管理端在 Phase 9 实现。

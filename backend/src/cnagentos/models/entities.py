@@ -7,7 +7,13 @@ from cnagentos.db import Base
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    """Return current UTC time as a naive datetime for cross-DB compatibility.
+
+    SQLite does not support timezone-aware storage, while PostgreSQL does.
+    Using naive UTC everywhere avoids ``TypeError: can't compare offset-naive
+    and offset-aware datetimes`` when switching between databases.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class User(Base):
@@ -166,14 +172,10 @@ class ModelConfig(Base):
 
     creator: Mapped[User | None] = relationship()
 
-    __table_args__ = (
-        Index(
-            "ix_model_configs_is_default",
-            is_default,
-            unique=True,
-            postgresql_where=is_default.is_(True),
-        ),
-    )
+    # Note: is_default uniqueness is enforced at the application layer
+    # (ModelEngineService.set_default_model clears existing default in a
+    # single transaction before setting the new one). The PostgreSQL-specific
+    # partial unique index was removed in Phase 5 for SQLite compatibility.
 
 
 class ModelCallLog(Base):
