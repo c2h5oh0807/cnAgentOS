@@ -10,7 +10,8 @@ class Settings(BaseSettings):
     app_name: str = "cnAgentOS"
     environment: str = Field(default="development", validation_alias="APP_ENV")
     database_url: str = Field(
-        validation_alias=AliasChoices("DATABASE_URL", "CNAGENTOS_DATABASE_URL")
+        default="sqlite+aiosqlite:///./data/cnagentos.db",
+        validation_alias=AliasChoices("DATABASE_URL", "CNAGENTOS_DATABASE_URL"),
     )
     csrf_secret: str = Field(
         default="development-only-change-me",

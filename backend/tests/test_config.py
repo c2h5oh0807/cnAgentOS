@@ -8,7 +8,7 @@ def test_production_rejects_default_csrf_secret():
     with pytest.raises(ValidationError) as exc_info:
         Settings(
             APP_ENV="production",
-            DATABASE_URL="postgresql+asyncpg://user:pass@127.0.0.1:5432/app",
+            DATABASE_URL="sqlite+aiosqlite:///./data/cnagentos.db",
             CSRF_SECRET="development-only-change-me",
             ENCRYPTION_KEY="production-encryption-key-32-bytes",
         )
@@ -20,7 +20,7 @@ def test_production_rejects_default_encryption_key():
     with pytest.raises(ValidationError) as exc_info:
         Settings(
             APP_ENV="production",
-            DATABASE_URL="postgresql+asyncpg://user:pass@127.0.0.1:5432/app",
+            DATABASE_URL="sqlite+aiosqlite:///./data/cnagentos.db",
             CSRF_SECRET="production-csrf-secret-value",
             ENCRYPTION_KEY="dev-only-32-byte-key-for-testing",
         )
@@ -31,7 +31,7 @@ def test_production_rejects_default_encryption_key():
 def test_production_uses_host_cookie_and_secure_flag():
     settings = Settings(
         APP_ENV="production",
-        DATABASE_URL="postgresql+asyncpg://user:pass@127.0.0.1:5432/app",
+        DATABASE_URL="sqlite+aiosqlite:///./data/cnagentos.db",
         CSRF_SECRET="production-csrf-secret-value",
         ENCRYPTION_KEY="production-encryption-key-32-bytes",
     )

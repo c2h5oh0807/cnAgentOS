@@ -12,6 +12,7 @@ backend/.venv
 
 # Local configuration and database artifacts
 .env
+*.db
 .pytest_cache/
 backend/.pytest_cache/
 
