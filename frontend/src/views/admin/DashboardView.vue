@@ -461,7 +461,7 @@ onUnmounted(() => {
         <KpiCard
           title="采集成功率"
           :value="(stats?.collection_health?.success_rate ?? '-') + '%'"
-          subtitle="近7天失败 {{ stats?.collection_health?.recent_failures_7d ?? 0 }} 次"
+          :subtitle="`近7天失败 ${stats?.collection_health?.recent_failures_7d ?? 0} 次`"
           color="#67C23A"
           :loading="loading && !stats"
         />
