@@ -7,7 +7,7 @@ import AdminPageHeader from '@/components/AdminPageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { useSessionStore } from '@/stores/session'
 import type { KnowledgeItem, KnowledgeItemDetail, WatchSourceItem } from '@/types'
-import { errorMessage, isUserCancelled, shortTime } from '@/utils/display'
+import { errorMessage, isUserCancelled, shortTime, statusLabel } from '@/utils/display'
 
 const session = useSessionStore()
 const loading = ref(false)
@@ -110,7 +110,7 @@ async function openDetail(item: KnowledgeItem): Promise<void> {
 async function changeStatus(item: KnowledgeItem, status: string): Promise<void> {
   if (!canManageItems.value) return
   try {
-    await ElMessageBox.confirm(`确认将内容「${item.title || item.id}」标记为 ${status}？`, '治理状态确认', { type: 'warning' })
+    await ElMessageBox.confirm(`确认将内容「${item.title || item.id}」标记为 ${statusLabel(status)}？`, '治理状态确认', { type: 'warning' })
     await patch<KnowledgeItem>(`/api/v1/admin/knowledge-items/${item.id}/status`, { status })
     ElMessage.success('治理状态已更新')
     await load()
@@ -133,7 +133,7 @@ onMounted(async () => {
   <admin-page-header title="数据仓库" description="查看标准化入库内容、追踪来源，并治理进入问数检索范围的内容状态。">
     <el-input v-model="filters.q" class="toolbar-search" clearable placeholder="搜索标题或摘要" @keyup.enter="search" />
     <el-select v-model="filters.source_id" clearable filterable placeholder="来源" style="width: 180px"><el-option v-for="source in sources" :key="source.id" :value="source.id" :label="source.name" /></el-select>
-    <el-select v-model="filters.status" clearable placeholder="状态" style="width: 140px"><el-option value="available" label="available" /><el-option value="excluded" label="excluded" /><el-option value="archived" label="archived" /></el-select>
+    <el-select v-model="filters.status" clearable placeholder="状态" style="width: 140px"><el-option value="available" label="可用" /><el-option value="excluded" label="排除" /><el-option value="archived" label="归档" /></el-select>
     <el-button @click="search">刷新</el-button>
   </admin-page-header>
 
@@ -152,9 +152,9 @@ onMounted(async () => {
             <el-button link type="success" :disabled="!canManageItems">治理状态</el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="available">available</el-dropdown-item>
-                <el-dropdown-item command="excluded">excluded</el-dropdown-item>
-                <el-dropdown-item command="archived">archived</el-dropdown-item>
+                <el-dropdown-item command="available">可用</el-dropdown-item>
+                <el-dropdown-item command="excluded">排除</el-dropdown-item>
+                <el-dropdown-item command="archived">归档</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -190,9 +190,9 @@ onMounted(async () => {
       <h3>正文</h3>
       <pre class="content-box">{{ detail.content }}</pre>
       <div class="drawer-actions">
-        <el-button :disabled="!canManageItems" @click="changeStatus(detail, 'available')">标记 available</el-button>
-        <el-button :disabled="!canManageItems" @click="changeStatus(detail, 'excluded')">标记 excluded</el-button>
-        <el-button :disabled="!canManageItems" @click="changeStatus(detail, 'archived')">标记 archived</el-button>
+        <el-button :disabled="!canManageItems" @click="changeStatus(detail, 'available')">标记可用</el-button>
+        <el-button :disabled="!canManageItems" @click="changeStatus(detail, 'excluded')">标记排除</el-button>
+        <el-button :disabled="!canManageItems" @click="changeStatus(detail, 'archived')">标记归档</el-button>
       </div>
     </template>
   </el-drawer>

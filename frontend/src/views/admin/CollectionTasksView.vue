@@ -58,17 +58,6 @@ async function openDetail(task: CollectionTaskItem): Promise<void> {
   }
 }
 
-async function executeTask(task: CollectionTaskItem): Promise<void> {
-  try {
-    await ElMessageBox.confirm(`确认执行采集任务 ${task.id}？`, '执行任务', { type: 'info' })
-    await post<void>(`/api/v1/admin/collection-tasks/${task.id}/execute`)
-    ElMessage.success('任务已开始执行')
-    await load()
-  } catch (error) {
-    if (!isUserCancelled(error)) ElMessage.error(errorMessage(error))
-  }
-}
-
 async function cancelTask(task: CollectionTaskItem): Promise<void> {
   try {
     await ElMessageBox.confirm(`确认取消采集任务 ${task.id}？`, '取消任务', { type: 'warning' })
@@ -102,12 +91,12 @@ onMounted(load)
 <template>
   <admin-page-header title="采集任务" description="查看手动采集任务的状态、来源级执行结果与脱敏失败摘要。">
     <el-select v-model="filters.status" clearable placeholder="状态" style="width: 170px">
-      <el-option value="pending" label="pending" />
-      <el-option value="running" label="running" />
-      <el-option value="succeeded" label="succeeded" />
-      <el-option value="partial_failed" label="partial_failed" />
-      <el-option value="failed" label="failed" />
-      <el-option value="cancelled" label="cancelled" />
+      <el-option value="pending" label="等待" />
+      <el-option value="running" label="运行中" />
+      <el-option value="succeeded" label="成功" />
+      <el-option value="partial_failed" label="部分失败" />
+      <el-option value="failed" label="失败" />
+      <el-option value="cancelled" label="已取消" />
     </el-select>
     <el-date-picker v-model="filters.started_from" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" placeholder="开始时间" />
     <el-date-picker v-model="filters.started_to" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" placeholder="结束时间" />
@@ -123,9 +112,8 @@ onMounted(load)
       <el-table-column prop="item_failure_count" label="失败数量" width="105" />
       <el-table-column label="创建时间" min-width="170"><template #default="{ row }">{{ shortTime(row.created_at) }}</template></el-table-column>
       <el-table-column label="完成时间" min-width="170"><template #default="{ row }">{{ shortTime(row.finished_at) }}</template></el-table-column>
-      <el-table-column label="操作" fixed="right" width="200">
+      <el-table-column label="操作" fixed="right" width="140">
         <template #default="{ row }">
-          <el-button link type="primary" :disabled="row.status !== 'pending'" @click="executeTask(row)">执行</el-button>
           <el-button link type="primary" @click="openDetail(row)">详情</el-button>
           <el-button link type="danger" :disabled="!['pending', 'running'].includes(row.status)" @click="cancelTask(row)">取消</el-button>
         </template>
@@ -143,7 +131,7 @@ onMounted(load)
     />
   </el-card>
 
-  <el-drawer v-model="detailVisible" title="任务详情" size="560px">
+  <el-drawer v-model="detailVisible" title="任务详情" size="680px">
     <el-skeleton v-if="detailLoading" :rows="6" animated />
     <template v-else-if="detail">
       <div class="detail-list">
@@ -156,10 +144,16 @@ onMounted(load)
       <el-divider />
       <h3>来源执行结果</h3>
       <el-table :data="detail.sources || []" size="small">
-        <el-table-column prop="source_name" label="来源" min-width="130" />
-        <el-table-column prop="rule_name" label="规则" min-width="130" />
+        <el-table-column prop="source_name" label="数据源" min-width="130" />
         <el-table-column label="状态" width="115"><template #default="{ row }"><status-tag :value="row.status" /></template></el-table-column>
         <el-table-column prop="failure_summary" label="失败摘要" min-width="160" />
+      </el-table>
+      <el-divider v-if="(detail.items ?? []).length > 0" />
+      <h3 v-if="(detail.items ?? []).length > 0">采集内容（{{ detail.items?.length }}）</h3>
+      <el-table v-if="(detail.items ?? []).length > 0" :data="detail.items || []" size="small">
+        <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="source_name" label="来源" min-width="100" />
+        <el-table-column label="结果" width="90"><template #default="{ row }"><el-tag :type="row.ingest_result === 'created' ? 'success' : 'info'" effect="plain" round>{{ row.ingest_result === 'created' ? '新增' : '重复' }}</el-tag></template></el-table-column>
       </el-table>
     </template>
   </el-drawer>

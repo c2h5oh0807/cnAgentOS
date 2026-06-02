@@ -64,6 +64,12 @@ export const useChatStore = defineStore('chat', () => {
     return conv
   }
 
+  async function createPrivateConversation(targetUserId: string): Promise<ConversationItem> {
+    const conv = await post<ConversationItem>('/api/v1/chat/conversations/private', { target_user_id: targetUserId })
+    await loadConversations()
+    return conv
+  }
+
   async function loadMessages(conversationId: string, before?: string, after?: string, limit = 50): Promise<void> {
     loadingMessages.value = true
     try {
@@ -193,6 +199,25 @@ export const useChatStore = defineStore('chat', () => {
         break
       }
 
+      case 'employee_reply': {
+        const empMsg = (frame.payload as { message: MessageItem }).message
+        if (empMsg.conversation_id === activeConversationId.value) {
+          messages.value = [...messages.value, empMsg]
+          lastMessageId.value = empMsg.id
+        } else {
+          const conv = conversations.value.find(c => c.id === empMsg.conversation_id)
+          if (conv) {
+            conv.unread_count = (conv.unread_count || 0) + 1
+            conv.last_message = {
+              content: empMsg.content,
+              sender_name: empMsg.sender_name,
+              created_at: empMsg.created_at || '',
+            }
+          }
+        }
+        break
+      }
+
       case 'message_read':
         // Optionally update UI for read receipts (Phase 7 enhancement)
         break
@@ -244,6 +269,7 @@ export const useChatStore = defineStore('chat', () => {
     sendFriendRequest,
     handleFriendRequest,
     createGroup,
+    createPrivateConversation,
     loadMessages,
     leaveGroup,
     setActiveConversation,

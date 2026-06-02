@@ -18,6 +18,7 @@ from cnagentos.schemas import (
     FriendRequestSend,
     MarkReadRequest,
     MessageSend,
+    PrivateConversationCreate,
 )
 from cnagentos.services.chat import ChatService
 from cnagentos.services.employee import DigitalEmployeeService
@@ -141,6 +142,22 @@ async def create_group(
     return success_response(
         request,
         await svc.create_group_conversation(payload.name, payload.member_usernames),
+        status_code=201,
+    )
+
+
+@router.post("/conversations/private", status_code=201)
+async def create_private_conversation(
+    request: Request,
+    session: DbSession,
+    context: ChatUser,
+    payload: PrivateConversationCreate,
+    _=Depends(require_csrf),
+):
+    svc = service_for(request, session, context)
+    return success_response(
+        request,
+        await svc.create_private_conversation(payload.target_user_id),
         status_code=201,
     )
 

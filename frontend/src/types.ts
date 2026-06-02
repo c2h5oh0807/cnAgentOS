@@ -110,19 +110,15 @@ export interface WatchSourceItem {
   auth_configured?: boolean
   auth_mask?: string | null
   description?: string | null
-  updated_at?: string
-}
-
-export interface WatchRuleItem {
-  id: string
-  source_id: string
-  name: string
+  // Rule fields (merged)
   request_method: string
   request_headers?: Record<string, unknown> | null
   request_params?: Record<string, unknown> | null
   extractor_type: string
   extractor_config: Record<string, unknown>
-  status: string
+  // Cron fields
+  cron_expression?: string | null
+  last_scheduled_run_at?: string | null
   updated_at?: string
 }
 
@@ -141,17 +137,26 @@ export interface CollectionTaskItem {
 
 export interface CollectionTaskSourceItem {
   source_id: string
-  rule_id: string
   source_name?: string | null
-  rule_name?: string | null
   status: string
   failure_summary?: string | null
   started_at?: string | null
   finished_at?: string | null
 }
 
+export interface CollectionTaskItemSummary {
+  id: string
+  title?: string | null
+  canonical_url?: string | null
+  source_name?: string | null
+  ingest_result: string
+  status: string
+  collected_at?: string
+}
+
 export interface CollectionTaskDetail extends CollectionTaskItem {
   sources?: CollectionTaskSourceItem[]
+  items?: CollectionTaskItemSummary[]
 }
 
 export interface KnowledgeItem {
@@ -234,6 +239,7 @@ export interface ConversationItem {
   id: string
   type: 'private' | 'group'
   name?: string | null
+  other_user_id?: string | null
   unread_count: number
   last_message?: {
     content: string

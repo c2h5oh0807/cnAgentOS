@@ -1,7 +1,8 @@
 """
 Watch and Data API controllers.
 
-Provides endpoints for data sources, rules, collection tasks, and knowledge items.
+Provides endpoints for data sources (merged with rules), collection tasks,
+and knowledge items.
 """
 
 import logging
@@ -23,9 +24,8 @@ from cnagentos.schemas import (
     CollectionTaskCreate,
     KnowledgeItemFilters,
     StatusUpdate,
-    WatchRuleCreate,
-    WatchRuleUpdate,
     WatchSourceCreate,
+    WatchSourceCronUpdate,
     WatchSourceUpdate,
 )
 from cnagentos.services.watch_and_data import WatchService
@@ -59,7 +59,7 @@ async def audit_on_error(
         raise
 
 
-# --- Data Sources ---
+# --- Data Sources (merged with rules) ---
 @router.get("/watch-sources")
 async def list_sources(
     request: Request,
@@ -140,54 +140,36 @@ async def update_source_status(
         raise
 
 
-# --- Watch Rules ---
-@router.get("/watch-sources/{source_id}/rules")
-async def list_rules(
+@router.patch("/watch-sources/{source_id}/cron", dependencies=[Depends(require_csrf)])
+async def update_source_cron(
     source_id: str,
-    request: Request,
-    session: DbSession,
-    context: WatchSourceManager,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-):
-    data, total = await service_for(request, session, context).list_rules(source_id, page, page_size)
-    return success_response(request, data, total=total, page=page, page_size=page_size)
-
-
-@router.post("/watch-sources/{source_id}/rules", dependencies=[Depends(require_csrf)])
-async def create_rule(
-    source_id: str,
-    payload: WatchRuleCreate,
+    payload: WatchSourceCronUpdate,
     request: Request,
     session: DbSession,
     context: WatchSourceManager,
 ):
     service = service_for(request, session, context)
     try:
-        data = await service.create_rule(source_id, payload)
+        data = await service.update_source_cron(
+            source_id, payload.cron_expression
+        )
         await session.commit()
-        return success_response(request, data, status_code=201)
-    except ApiError:
-        await session.rollback()
-        raise
-
-
-@router.patch("/watch-rules/{rule_id}", dependencies=[Depends(require_csrf)])
-async def update_rule(
-    rule_id: str,
-    payload: WatchRuleUpdate,
-    request: Request,
-    session: DbSession,
-    context: WatchSourceManager,
-):
-    service = service_for(request, session, context)
-    try:
-        data = await service.update_rule(rule_id, payload)
-        await session.commit()
+        # Reschedule the collection job
+        _reschedule_source_cron(source_id)
         return success_response(request, data)
     except ApiError:
         await session.rollback()
         raise
+
+
+def _reschedule_source_cron(source_id: str) -> None:
+    """Signal the scheduler to reschedule a source's cron job.
+
+    The actual rescheduling is deferred to avoid circular imports at module
+    level. The scheduler module watches for config changes via app.state.
+    """
+    from cnagentos.services.scheduler import reschedule_collection_job
+    reschedule_collection_job(source_id)
 
 
 # --- Collection Tasks ---
@@ -200,7 +182,7 @@ async def create_task(
 ):
     service = service_for(request, session, context)
     try:
-        data = await service.create_task(payload)
+        data = await service.create_task(payload, trigger_type="manual")
         await session.commit()
         return success_response(request, data, status_code=202)
     except ApiError:

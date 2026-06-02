@@ -7,7 +7,10 @@ Phase 7 enhancements:
 """
 
 import asyncio
+import logging
 from uuid import uuid4
+
+_logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -121,13 +124,27 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         exclude_user_id=user_id,
                     )
 
-                    # Phase 7: @mention detection for digital employees
+                    # Phase 7: @mention detection for digital employees (group chat only)
                     if content_type == "text":
                         async with sessionmaker() as db_session:
-                            emp_svc = DigitalEmployeeService(
-                                db_session, actor=context.user, ip_address=ip_address,
+                            from cnagentos.models.entities import Conversation as _Conv
+
+                            conv = await db_session.get(_Conv, conv_id)
+                            is_group = conv is not None and conv.type == "group"
+                            if is_group:
+                                emp_svc = DigitalEmployeeService(
+                                    db_session, actor=context.user, ip_address=ip_address,
+                                )
+                                mentioned = await emp_svc.detect_mentions(content)
+                            else:
+                                mentioned = []
+
+                        if mentioned:
+                            _logger.info(
+                                "Detected %d employee mention(s) in conv=%s: %s",
+                                len(mentioned), conv_id,
+                                [m.get("code") or m.get("name") for m in mentioned],
                             )
-                            mentioned = await emp_svc.detect_mentions(content)
 
                         for emp in mentioned:
                             # Trigger employee reply asynchronously
@@ -217,6 +234,10 @@ async def _trigger_employee_reply(
     user_message: str, member_ids: list[str], sender_id: str,
 ) -> None:
     """Asynchronously trigger a digital employee reply in a group chat."""
+    _logger.info(
+        "Starting employee reply: employee=%s conv=%s",
+        employee.get("id"), conversation_id,
+    )
     # Notify conversation that employee is typing
     await broadcast_to_conversation(
         member_ids,
@@ -240,7 +261,8 @@ async def _trigger_employee_reply(
 
             task_user = await db_session.get(User, SYSTEM_TASK_USER_ID)
             if task_user is None:
-                return
+                from cnagentos.services.bootstrap import ensure_system_task_user
+                task_user = await ensure_system_task_user(db_session)
 
             emp_svc = DigitalEmployeeService(
                 db_session, actor=task_user, ip_address=None,
@@ -300,9 +322,11 @@ async def _trigger_employee_reply(
                 },
             },
         )
-    except Exception:
-        # Silently handle employee reply failures
-        pass
+    except Exception as exc:
+        _logger.warning(
+            "Employee reply failed: employee=%s conv=%s err=%s",
+            employee.get("id"), conversation_id, exc,
+        )
 
 
 async def _get_member_ids(sessionmaker, conversation_id: str) -> list[str]:

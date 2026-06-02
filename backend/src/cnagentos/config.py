@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     def use_secure_cookie(self) -> bool:
         return self.environment.lower() == "production" or self.cookie_secure
 
+    @property
+    def sync_database_url(self) -> str:
+        """Return a sync database URL for APScheduler's SQLAlchemyJobStore."""
+        return self.database_url.replace("+aiosqlite", "").replace("+asyncpg", "")
+
     @model_validator(mode="after")
     def production_must_set_secrets(self):
         if self.environment.lower() == "production":

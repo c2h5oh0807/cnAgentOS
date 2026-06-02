@@ -5,7 +5,7 @@ import { onMounted, ref } from 'vue'
 import { get, post } from '@/api/client'
 import AdminPageHeader from '@/components/AdminPageHeader.vue'
 import type { SentimentTaskItem, SentimentTaskDetail, SentimentReportItem } from '@/types'
-import { errorMessage, isUserCancelled } from '@/utils/display'
+import { errorMessage, isUserCancelled, statusLabel, statusType } from '@/utils/display'
 
 const loading = ref(false)
 const tasks = ref<SentimentTaskItem[]>([])
@@ -113,18 +113,6 @@ function taskTypeLabel(t: string): string {
   return map[t] || t
 }
 
-function statusTag(s: string): string {
-  const map: Record<string, string> = {
-    pending: 'info', running: 'warning', completed: 'success', failed: 'danger',
-  }
-  return map[s] || 'info'
-}
-
-function statusLabel(s: string): string {
-  const map: Record<string, string> = { pending: '等待', running: '运行中', completed: '完成', failed: '失败' }
-  return map[s] || s
-}
-
 function reportTypeLabel(t: string): string {
   const map: Record<string, string> = { sentiment: '情感分析', keyword: '关键词提取', hotspot: '热点挖掘', summary: '综合摘要' }
   return map[t] || t
@@ -174,7 +162,7 @@ onMounted(load)
       </el-table-column>
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
-          <el-tag :type="statusTag(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+          <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="进度" width="100">
@@ -234,7 +222,7 @@ onMounted(load)
         <el-descriptions-item label="名称">{{ selectedTask.name }}</el-descriptions-item>
         <el-descriptions-item label="类型">{{ taskTypeLabel(selectedTask.task_type) }}</el-descriptions-item>
         <el-descriptions-item label="状态">
-          <el-tag :type="statusTag(selectedTask.status)" size="small">{{ statusLabel(selectedTask.status) }}</el-tag>
+          <el-tag :type="statusType(selectedTask.status)" size="small">{{ statusLabel(selectedTask.status) }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="进度">
           <el-progress :percentage="selectedTask.progress" :status="selectedTask.status === 'failed' ? 'exception' : undefined" style="width: 120px" />

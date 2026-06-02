@@ -129,7 +129,7 @@ class ModelCallFilters(PageParams):
     started_to: datetime | None = None
 
 
-# --- Watch Sources ---
+# --- Watch Sources (merged with rules) ---
 class WatchSourceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     source_type: str = Field(default="web_page", max_length=20)
@@ -137,6 +137,16 @@ class WatchSourceCreate(BaseModel):
     allowed_hosts: list[str] = Field(min_length=1)
     auth_config: dict | None = None
     description: str | None = None
+
+    # Rule fields (merged)
+    request_method: str = Field(default="GET", max_length=10)
+    request_headers: dict | None = None
+    request_params: dict | None = None
+    extractor_type: str = Field(default="html", max_length=20)
+    extractor_config: dict = Field(min_length=1)
+
+    # Cron fields
+    cron_expression: str | None = Field(default=None, max_length=120)
 
 
 class WatchSourceUpdate(BaseModel):
@@ -146,43 +156,31 @@ class WatchSourceUpdate(BaseModel):
     auth_config: dict | None = None
     description: str | None = None
 
-    @model_validator(mode="after")
-    def ensure_change(self):
-        if self.name is None and self.entry_url is None and self.allowed_hosts is None and self.auth_config is None and self.description is None:
-            raise ValueError("至少提交一个可修改字段")
-        return self
-
-
-# --- Watch Rules ---
-class WatchRuleCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
-    request_method: str = Field(default="GET", max_length=10)
-    request_headers: dict | None = None
-    request_params: dict | None = None
-    extractor_type: str = Field(default="html", max_length=20)
-    extractor_config: dict = Field(min_length=1)
-
-
-class WatchRuleUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=120)
+    # Rule fields (merged)
     request_method: str | None = Field(default=None, max_length=10)
     request_headers: dict | None = None
     request_params: dict | None = None
     extractor_type: str | None = Field(default=None, max_length=20)
     extractor_config: dict | None = None
-    status: str | None = None
+
+    # Cron fields
+    cron_expression: str | None = None
 
     @model_validator(mode="after")
     def ensure_change(self):
-        if self.name is None and self.request_method is None and self.request_headers is None and self.request_params is None and self.extractor_type is None and self.extractor_config is None and self.status is None:
+        changed = {k for k, v in self.model_dump(exclude_unset=True).items() if v is not None}
+        if not changed:
             raise ValueError("至少提交一个可修改字段")
         return self
+
+
+class WatchSourceCronUpdate(BaseModel):
+    cron_expression: str | None = None
 
 
 # --- Collection Tasks ---
 class CollectionTaskTarget(BaseModel):
     source_id: str
-    rule_id: str
     variables: dict | None = None
 
 
@@ -254,7 +252,7 @@ class RegisterRequest(BaseModel):
         pattern=r"^[a-zA-Z][a-zA-Z0-9_-]{2,28}[a-zA-Z0-9]$",
     )
     display_name: str = Field(min_length=1, max_length=120)
-    password: str = Field(min_length=12, max_length=128)
+    password: str = Field(min_length=6, max_length=128)
 
 
 class RegisterResponse(BaseModel):
@@ -280,6 +278,10 @@ class FriendRequestAction(BaseModel):
 class ConversationCreate(BaseModel):
     member_usernames: list[str] = Field(min_length=1, max_length=200)
     name: str | None = Field(default=None, max_length=255)
+
+
+class PrivateConversationCreate(BaseModel):
+    target_user_id: str
 
 
 class MessageSend(BaseModel):

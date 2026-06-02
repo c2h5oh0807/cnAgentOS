@@ -216,6 +216,20 @@ class WatchSource(Base):
     auth_ciphertext: Mapped[str | None] = mapped_column(Text)
     auth_mask: Mapped[str | None] = mapped_column(String(120))
     description: Mapped[str | None] = mapped_column(Text)
+
+    # Merged rule fields (one source = one rule)
+    request_method: Mapped[str] = mapped_column(String(10), default="GET")
+    request_headers: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    request_params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    extractor_type: Mapped[str] = mapped_column(String(20), default="html")
+    extractor_config: Mapped[dict] = mapped_column(JSON, default={})
+
+    # Scheduled collection fields
+    cron_expression: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    last_scheduled_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
@@ -223,29 +237,6 @@ class WatchSource(Base):
     )
 
     creator: Mapped[User | None] = relationship()
-    rules: Mapped[list["WatchRule"]] = relationship(
-        back_populates="source", cascade="all, delete-orphan"
-    )
-
-
-class WatchRule(Base):
-    __tablename__ = "watch_rules"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    source_id: Mapped[str] = mapped_column(ForeignKey("watch_sources.id"))
-    name: Mapped[str] = mapped_column(String(120))
-    request_method: Mapped[str] = mapped_column(String(10))
-    request_headers: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    request_params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    extractor_type: Mapped[str] = mapped_column(String(20))
-    extractor_config: Mapped[dict] = mapped_column(JSON)
-    status: Mapped[str] = mapped_column(String(20), default="disabled")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now
-    )
-
-    source: Mapped[WatchSource] = relationship(back_populates="rules")
 
 
 class CollectionTask(Base):
@@ -277,7 +268,6 @@ class CollectionTaskSource(Base):
 
     task_id: Mapped[str] = mapped_column(ForeignKey("collection_tasks.id"), primary_key=True)
     source_id: Mapped[str] = mapped_column(ForeignKey("watch_sources.id"), primary_key=True)
-    rule_id: Mapped[str] = mapped_column(ForeignKey("watch_rules.id"))
     status: Mapped[str] = mapped_column(String(20), default="pending")
     failure_summary: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -285,7 +275,6 @@ class CollectionTaskSource(Base):
 
     task: Mapped[CollectionTask] = relationship(back_populates="task_sources")
     source: Mapped[WatchSource] = relationship()
-    rule: Mapped[WatchRule] = relationship()
 
 
 class KnowledgeItem(Base):

@@ -287,7 +287,6 @@ class ChatService:
                     select(Conversation)
                     .options(
                         selectinload(Conversation.members).selectinload(ConversationMember.user),
-                        selectinload(Conversation.messages).limit(1).selectinload(Message.sender),
                     )
                     .where(Conversation.id.in_(conv_ids))
                     .order_by(Conversation.updated_at.desc())
@@ -315,27 +314,39 @@ class ChatService:
                 )
                 unread = (await self.session.scalar(unread_q)) or 0
 
+            # Fetch the most recent message for preview
+            last_msg_row = (
+                await self.session.scalar(
+                    select(Message)
+                    .options(selectinload(Message.sender))
+                    .where(Message.conversation_id == conv.id)
+                    .order_by(Message.created_at.desc())
+                    .limit(1)
+                )
+            )
             last_msg = None
-            if conv.messages:
-                m = conv.messages[-1]
+            if last_msg_row:
                 last_msg = {
-                    "content": m.content[:200],
-                    "sender_name": m.sender.username if m.sender else "",
-                    "created_at": m.created_at.isoformat() if m.created_at else None,
+                    "content": last_msg_row.content[:200],
+                    "sender_name": last_msg_row.sender.username if last_msg_row.sender else "",
+                    "created_at": last_msg_row.created_at.isoformat() if last_msg_row.created_at else None,
                 }
 
             name = conv.name
+            other_id = None
             if conv.type == "private":
                 # Show the other user's display name
                 for m in conv.members:
                     if m.user_id != self.actor_id:
                         name = name or m.user.display_name
+                        other_id = m.user_id
                         break
 
             results.append({
                 "id": conv.id,
                 "type": conv.type,
                 "name": name,
+                "other_user_id": other_id,
                 "unread_count": unread,
                 "last_message": last_msg,
                 "created_at": conv.created_at.isoformat() if conv.created_at else None,
@@ -387,6 +398,39 @@ class ChatService:
         )
         await self.session.flush()
         return conv.id
+
+    async def create_private_conversation(self, other_user_id: str) -> dict:
+        """Get or create a private conversation and return its full data."""
+        conv_id = await self._get_or_create_private_conversation(other_user_id)
+        await self.session.commit()
+        conv = await self.session.get(
+            Conversation, conv_id,
+            options=[
+                selectinload(Conversation.members).selectinload(ConversationMember.user),
+            ],
+        )
+        if conv is None:
+            raise ApiError(500, "INTERNAL", "创建会话失败")
+
+        # Build response dict matching list_conversations format
+        name = None
+        other_id = None
+        for m in conv.members:
+            if m.user_id != self.actor_id:
+                name = m.user.display_name
+                other_id = m.user_id
+                break
+
+        return {
+            "id": conv.id,
+            "type": conv.type,
+            "name": name,
+            "other_user_id": other_id,
+            "unread_count": 0,
+            "last_message": None,
+            "created_at": conv.created_at.isoformat() if conv.created_at else None,
+            "updated_at": conv.updated_at.isoformat() if conv.updated_at else None,
+        }
 
     async def create_group_conversation(
         self, name: str | None, member_usernames: list[str]
@@ -520,7 +564,7 @@ class ChatService:
                 "id": m.id,
                 "conversation_id": m.conversation_id,
                 "sender_id": m.sender_id,
-                "sender_name": m.sender.username if m.sender else "",
+                "sender_name": m.sender.display_name if m.sender else "",
                 "content_type": m.content_type,
                 "content": m.content,
                 "reply_to_id": m.reply_to_id,

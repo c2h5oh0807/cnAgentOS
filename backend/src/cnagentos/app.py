@@ -17,7 +17,7 @@ from cnagentos.controllers.admin_chat import router as admin_chat_router
 from cnagentos.controllers.admin_employee import router as admin_employee_router
 from cnagentos.controllers.admin_server import router as admin_server_router
 from cnagentos.controllers.admin_sentiment import router as admin_sentiment_router
-from cnagentos.db import build_engine, build_sessionmaker
+from cnagentos.db import Base, build_engine, build_sessionmaker
 from cnagentos.security import init_cipher
 
 
@@ -25,11 +25,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     active_settings = settings or get_settings()
     init_cipher(active_settings.encryption_key)
     engine = build_engine(active_settings)
+    sessionmaker = build_sessionmaker(engine)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # --- Startup ---
+        # Auto-create tables for development
+        async with engine.connect() as conn:
+            from sqlalchemy import inspect
+            has_tables = await conn.run_sync(lambda sync_conn: inspect(sync_conn).has_table("users"))
+        if not has_tables:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+        # Initialize and start the APScheduler
+        from cnagentos.services.scheduler import init_scheduler, set_sessionmaker, register_all_collection_jobs
+        scheduler = init_scheduler(active_settings.sync_database_url)
+        set_sessionmaker(sessionmaker)
+        scheduler.start()
+        app.state.scheduler = scheduler
+        # Register scheduled collection jobs for sources with cron enabled
+        await register_all_collection_jobs()
+
         yield
-        # Wait for background tasks to complete on shutdown
+
+        # --- Shutdown ---
+        # Shut down the scheduler first (stop accepting new jobs)
+        scheduler.shutdown(wait=False)
+        # Wait for background collection tasks to complete
         if _background_tasks:
             await asyncio.gather(*_background_tasks, return_exceptions=True)
         await engine.dispose()
@@ -37,7 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title=active_settings.app_name, version="0.1.0", lifespan=lifespan)
     app.state.settings = active_settings
     app.state.engine = engine
-    app.state.sessionmaker = build_sessionmaker(engine)
+    app.state.sessionmaker = sessionmaker
     register_api_support(app)
     app.include_router(auth_router)
     app.include_router(admin_router)

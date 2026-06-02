@@ -67,9 +67,7 @@ SYSTEM_FUNCTIONS = [
         "functions.manage",
     ),
     ("admin_audit", "审计日志", "admin", "/admin/audit-logs", "history", 40, "audit.view"),
-    ("admin_model_engine", "模型引擎", None, None, "cpu", 50, None),
-    ("admin_models", "模型配置", "admin_model_engine", "/admin/models", "settings", 10, "models.view"),
-    ("admin_model_calls", "调用记录", "admin_model_engine", "/admin/model-calls", "activity", 20, "models.view"),
+    ("admin_chat_groups", "群管理", "admin", "/admin/chat-groups", "chat-dot-square", 50, "chat.groups.manage"),
     ("watch", "智能瞭望", None, None, "file-search", 20, None),
     (
         "watch_sources",
@@ -89,6 +87,11 @@ SYSTEM_FUNCTIONS = [
         20,
         "watch.tasks.view",
     ),
+    ("admin_services", "服务治理", None, None, "connection", 25, None),
+    ("admin_chat_servers", "服务器管理", "admin_services", "/admin/servers", "connection", 10, "tools.manage"),
+    ("admin_files", "文件管理", "admin_services", "/admin/files", "folder-opened", 20, "files.view"),
+    ("admin_employees", "数字员工", "admin_services", "/admin/digital-employees", "robot", 30, "employee.manage"),
+    ("admin_tools", "工具管理", "admin_services", "/admin/tools", "tools", 40, "tools.manage"),
     ("data", "数据仓库", None, None, "activity", 30, None),
     (
         "data_items",
@@ -100,15 +103,12 @@ SYSTEM_FUNCTIONS = [
         "data.items.view",
     ),
     ("qa", "智能问数", None, "/qa", "sparkles", 40, "qa.use"),
-    # Phase 6-9 extension navigation entries (added in Phase 5 as reference;
-    # actual activation happens in their respective phases):
-    ("admin_chat_groups", "群管理", "admin", "/admin/chat-groups", "chat-dot-square", 50, "chat.groups.manage"),
-    ("admin_chat_servers", "服务器管理", "admin", "/admin/servers", "connection", 55, "tools.manage"),
-    ("admin_files", "文件管理", "admin", "/admin/files", "folder-opened", 60, "files.view"),
-    ("admin_employees", "数字员工", "admin", "/admin/digital-employees", "robot", 70, "employee.manage"),
-    ("admin_tools", "工具管理", "admin", "/admin/tools", "tools", 80, "tools.manage"),
-    ("admin_dashboard", "数智大屏", "admin", "/admin/dashboard", "data-analysis", 90, "sentiment.view"),
-    ("admin_sentiment", "舆情分析", "admin", "/admin/sentiment", "chat-dot-square", 100, "sentiment.view"),
+    ("admin_model_engine", "模型引擎", None, None, "cpu", 50, None),
+    ("admin_models", "模型配置", "admin_model_engine", "/admin/models", "settings", 10, "models.view"),
+    ("admin_model_calls", "调用记录", "admin_model_engine", "/admin/model-calls", "activity", 20, "models.view"),
+    ("admin_analytics", "数智分析", None, None, "data-analysis", 60, None),
+    ("admin_dashboard", "数智大屏", "admin_analytics", "/admin/dashboard", "data-analysis", 10, "sentiment.view"),
+    ("admin_sentiment", "舆情分析", "admin_analytics", "/admin/sentiment", "chat-dot-square", 20, "sentiment.view"),
     # ("admin_automation", "定时任务", "admin", "/admin/scheduled-tasks", "timer", 90, "automation.view"),
 ]
 
@@ -161,7 +161,7 @@ async def initialize_reference_data(session: AsyncSession) -> Role:
         session.add(default_role)
         await session.flush()
 
-    # Grant Phase 6-7 chat permissions to default_user role (self-registered users)
+    # Grant default permissions to default_user role (self-registered users)
     default_chat_perms = [
         "chat.contacts.view",
         "chat.friends.request",
@@ -169,6 +169,7 @@ async def initialize_reference_data(session: AsyncSession) -> Role:
         "chat.messages.send",
         "chat.files.upload",
         "employee.chat",
+        "qa.use",
     ]
     for code in default_chat_perms:
         perm = permissions.get(code)
@@ -242,7 +243,7 @@ async def ensure_system_task_user(session: AsyncSession) -> User:
         user = User(
             id=SYSTEM_TASK_USER_ID,
             username=SYSTEM_TASK_USER_ID,
-            display_name="System Task",
+            display_name="系统助手",
             password_hash="",  # No password, cannot login
             status="active",
             is_system_admin=False,

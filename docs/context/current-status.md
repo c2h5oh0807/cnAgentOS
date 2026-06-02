@@ -56,6 +56,41 @@ Phase 1 A 已完成认证/RBAC/导航/审计后端实现和集成测试。Phase 
 
 Phase 8 完成后，Phase 9（视觉、语音与自动化增强）可以开始实施。待完成的功能范围见 `docs/planning/course-assignment-delivery-plan.md`。
 
+## Phase 9 实现摘要
+
+**分支**：当前分支（合表+定时）
+
+**已实现能力**：
+
+**合表重构（数据源=规则）**：
+- 将 `watch_rules` 表合并到 `watch_sources` 表，移除独立的规则概念。一个数据源绑定一个规则，规则字段（`request_method`、`request_headers`、`request_params`、`extractor_type`、`extractor_config`）直接存储到 `watch_sources`。
+- 移除 `WatchRule` ORM 模型、`WatchRuleCreate/Update` Schema、规则 CRUD 端点和规则审计动作。
+- 简化 `create_task` 和 `_execute_source_collection`：不再需要 `rule_id` 查找和交叉校验，采集执行直接从 source 读取规则字段。
+- 移除 `update_source_status` 中"启用数据源前需要活跃规则"的校验（source 即 rule，状态直接可控）。
+- `CollectionTaskSource` 表移除 `rule_id` 列和 FK 约束。
+- 数据迁移：已有数据源的规则数据被迁移到 `watch_sources` 的新列。
+
+**定时采集（APScheduler 集成）**：
+- `config.py` 新增 `sync_database_url` 属性（去除 `+aiosqlite`/`+asyncpg`），供 APScheduler 的 `SQLAlchemyJobStore` 使用。
+- `scheduler.py` 扩充：`register_all_collection_jobs()` 在启动时注册所有启用了 cron 的数据源，`reschedule_collection_job()` 在源配置变更时重置调度。
+- `app.py` lifespan 接入调度器生命周期：启动时 init → start → 注册任务，关闭时 shutdown。
+- `WatchSource` 新增 `cron_expression`、`cron_enabled`、`last_scheduled_run_at` 字段。
+- 每个数据源可独立配置 cron 表达式（如 `0 9 * * *`），通过 `PATCH /api/v1/admin/watch-sources/{id}/cron` 端点管理。
+- 定时触发的采集任务 `trigger_type` 标记为 `"scheduled"`，手动触发的仍为 `"manual"`。
+- 保留手动"运行"入口，用于测试和首次执行。
+
+**前端改造**：
+- `WatchSourcesView.vue` 删除独立规则表格和所有规则弹窗，规则字段并入数据源创建/编辑表单。
+- 数据源表格新增"方法"、"解析"、"定时"列，"操作"列增加"启用定时/停用定时"按钮。
+- `CollectionTasksView.vue` 移除 `rule_name` 列。
+- `types.ts` 合并且简化类型定义。
+
+**验证结果**：
+- `uv run pytest tests/ -q` 通过（133 passed）
+- `pnpm --dir frontend build` 通过（TypeScript 编译 + Vite 构建成功）
+- `pnpm --dir frontend test:unit` 通过（9 passed）
+- Alembic 迁移升级和降级验证通过
+
 ## 团队任务书后续范围
 
 课程团队任务书要求在现有 MVP 之后继续交付即时通讯、数字员工、智慧舆情、视觉/语音增强、自动化、SQLite/MySQL 多数据库支持以及最终汇报资料。后续执行顺序、三人并行责任流、阶段门槛和评分覆盖矩阵维护在 `docs/planning/course-assignment-delivery-plan.md`。

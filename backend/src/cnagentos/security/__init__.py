@@ -34,7 +34,7 @@ __all__ = [
 ]
 
 
-PASSWORD_MIN_LENGTH = 12
+PASSWORD_MIN_LENGTH = 6
 PASSWORD_MAX_LENGTH = 128
 password_hasher = PasswordHash.recommended()
 
@@ -50,7 +50,7 @@ def validate_password(password: str) -> None:
             400,
             "VALIDATION_ERROR",
             "请求参数无效",
-            {"password": "密码长度必须在 12 到 128 个字符之间"},
+            {"password": "密码长度必须在 6 到 128 个字符之间"},
         )
 
 

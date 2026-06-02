@@ -14,7 +14,22 @@
 
 **原因**：目标是构建符合正式需求、安全边界和可持续开发规范的新系统，而不是维护示例兼容性。
 
-## 2026-05-27：首版采用 Python 模块化 MVC 单体
+## 2026-06-02：数据源与规则合表 + 定时采集
+
+**决定**：将 `watch_rules` 表合并到 `watch_sources` 表，一个数据源绑定一个规则；引入 APScheduler 实现定时采集。
+
+**原因**：
+- 实际使用中一个数据源只需要一条采集规则，独立规则表增加了不必要的复杂性。
+- 用户遇到数据源与规则状态循环依赖的死锁问题（数据源启用需要活跃规则，但规则启用入口不直观）。
+- 采集本质是周期性任务，手动触发仅用于测试和首次执行，定时采集才是长期运行模式。
+
+**影响**：
+- `watch_rules` 表和 `WatchRule` ORM 模型已移除，对应 API 端点（`/watch-sources/{id}/rules`、`/watch-rules/{id}`）已下线。
+- `WatchSource` 新增规则字段和 cron 字段。
+- `CollectionTaskSource` 表移除 `rule_id` 列。
+- `app.py` lifespan 接入 APScheduler 生命周期。
+- 前端 `WatchSourcesView.vue` 简化：删除独立规则表格和弹窗，规则字段并入数据源表单。
+- `cron_enabled` 字段于 0015 迁移中移除。数据源 `status == "active"` 即等于定时启停状态，无需独立开关。
 
 **决定**：正式版本使用 Python 后端，按 MVC 与业务模块组织为单体应用；首版不引入微服务。
 

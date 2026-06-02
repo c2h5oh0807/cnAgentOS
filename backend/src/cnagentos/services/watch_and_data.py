@@ -1,7 +1,7 @@
 """
 Watch and Data service for collection management.
 
-Handles data sources, rules, collection tasks, and knowledge items.
+Handles data sources (merged with rules), collection tasks, and knowledge items.
 """
 
 import asyncio
@@ -24,15 +24,12 @@ from cnagentos.models.entities import (
     CollectionTaskSource,
     KnowledgeItem,
     User,
-    WatchRule,
     WatchSource,
     utc_now,
 )
 from cnagentos.schemas import (
     CollectionTaskCreate,
     KnowledgeItemFilters,
-    WatchRuleCreate,
-    WatchRuleUpdate,
     WatchSourceCreate,
     WatchSourceUpdate,
 )
@@ -47,7 +44,6 @@ from cnagentos.services.watch_audit import write_watch_audit
 
 VALID_SOURCE_TYPES = {"web_api", "web_page"}
 VALID_SOURCE_STATUSES = {"active", "disabled"}
-VALID_RULE_STATUSES = {"active", "disabled"}
 VALID_TASK_STATUSES = {"pending", "running", "succeeded", "partial_failed", "failed", "cancelled"}
 VALID_ITEM_STATUSES = {"available", "excluded", "archived"}
 ALLOWED_EXTRACTOR_TYPES = {"json", "html"}
@@ -72,23 +68,17 @@ class WatchService:
             "auth_mask": source.auth_mask,
             "status": source.status,
             "description": source.description,
+            # Rule fields (merged)
+            "request_method": source.request_method,
+            "request_headers": source.request_headers,
+            "request_params": source.request_params,
+            "extractor_type": source.extractor_type,
+            "extractor_config": source.extractor_config,
+            # Cron fields
+            "cron_expression": source.cron_expression,
+            "last_scheduled_run_at": source.last_scheduled_run_at,
             "created_at": source.created_at,
             "updated_at": source.updated_at,
-        }
-
-    def _serialize_rule(self, rule: WatchRule) -> dict:
-        return {
-            "id": rule.id,
-            "source_id": rule.source_id,
-            "name": rule.name,
-            "request_method": rule.request_method,
-            "request_headers": rule.request_headers,
-            "request_params": rule.request_params,
-            "extractor_type": rule.extractor_type,
-            "extractor_config": rule.extractor_config,
-            "status": rule.status,
-            "created_at": rule.created_at,
-            "updated_at": rule.updated_at,
         }
 
     def _serialize_task(self, task: CollectionTask, *, include_failure_summary: bool = False) -> dict:
@@ -107,7 +97,7 @@ class WatchService:
             data["failure_summary"] = task.failure_summary
         return data
 
-    # --- Data Source CRUD ---
+    # --- Data Source CRUD (merged with rules) ---
     async def list_sources(
         self, page: int, page_size: int, q: str | None, status: str | None, source_type: str | None
     ) -> tuple[list[dict], int]:
@@ -145,6 +135,16 @@ class WatchService:
         except ApiError as e:
             raise ApiError(422, "SOURCE_UNSAFE", str(e), e.details)
 
+        if payload.extractor_type not in ALLOWED_EXTRACTOR_TYPES:
+            raise ApiError(400, "VALIDATION_ERROR", "不支持的解析类型")
+
+        try:
+            validate_rule_security(
+                payload.request_headers, payload.request_params, payload.extractor_config
+            )
+        except ApiError as e:
+            raise ApiError(422, "SOURCE_UNSAFE", str(e), e.details)
+
         source = WatchSource(
             id=str(uuid4()),
             name=payload.name,
@@ -153,6 +153,14 @@ class WatchService:
             allowed_hosts=payload.allowed_hosts,
             status="disabled",
             description=payload.description,
+            # Rule fields
+            request_method=payload.request_method,
+            request_headers=payload.request_headers,
+            request_params=payload.request_params,
+            extractor_type=payload.extractor_type,
+            extractor_config=payload.extractor_config,
+            # Cron
+            cron_expression=payload.cron_expression,
             created_by=self.actor.id,
         )
         if payload.auth_config:
@@ -178,7 +186,7 @@ class WatchService:
         if source is None:
             raise ApiError(404, "NOT_FOUND", "数据源不存在")
 
-        if payload.entry_url or payload.allowed_hosts:
+        if payload.entry_url is not None or payload.allowed_hosts is not None:
             check_url = payload.entry_url or source.entry_url
             check_hosts = payload.allowed_hosts or source.allowed_hosts
             try:
@@ -186,6 +194,24 @@ class WatchService:
             except ApiError as e:
                 raise ApiError(422, "SOURCE_UNSAFE", str(e), e.details)
 
+        # Validate rule security if any rule-related fields are being updated
+        rule_fields_changed = any(
+            getattr(payload, f) is not None
+            for f in ("request_headers", "request_params", "extractor_config")
+        )
+        if rule_fields_changed:
+            merged_headers = payload.request_headers if payload.request_headers is not None else source.request_headers
+            merged_params = payload.request_params if payload.request_params is not None else source.request_params
+            merged_config = payload.extractor_config if payload.extractor_config is not None else source.extractor_config
+            try:
+                validate_rule_security(merged_headers, merged_params, merged_config)
+            except ApiError as e:
+                raise ApiError(422, "SOURCE_UNSAFE", str(e), e.details)
+
+        if payload.extractor_type is not None and payload.extractor_type not in ALLOWED_EXTRACTOR_TYPES:
+            raise ApiError(400, "VALIDATION_ERROR", "不支持的解析类型")
+
+        # Apply field updates
         if payload.name is not None:
             source.name = payload.name
         if payload.entry_url is not None:
@@ -198,6 +224,22 @@ class WatchService:
             auth_json = json.dumps(payload.auth_config)
             source.auth_ciphertext = encrypt(auth_json)
             source.auth_mask = "****已配置"
+
+        # Rule fields
+        if payload.request_method is not None:
+            source.request_method = payload.request_method
+        if payload.request_headers is not None:
+            source.request_headers = payload.request_headers
+        if payload.request_params is not None:
+            source.request_params = payload.request_params
+        if payload.extractor_type is not None:
+            source.extractor_type = payload.extractor_type
+        if payload.extractor_config is not None:
+            source.extractor_config = payload.extractor_config
+
+        # Cron fields
+        if payload.cron_expression is not None:
+            source.cron_expression = payload.cron_expression
 
         await write_watch_audit(
             self.session, self.actor, "watch.source.updated", "watch_source",
@@ -213,15 +255,8 @@ class WatchService:
         if source is None:
             raise ApiError(404, "NOT_FOUND", "数据源不存在")
 
-        if status == "active":
-            has_active_rule = await self.session.scalar(
-                select(func.count())
-                .select_from(WatchRule)
-                .where(WatchRule.source_id == source_id, WatchRule.status == "active")
-            )
-            if not has_active_rule:
-                raise ApiError(409, "INVALID_STATE", "启用数据源前至少需要一条启用状态的采集规则")
-
+        # No longer requires an active rule — source IS the rule now.
+        # Activation simply sets the source status.
         source.status = status
         await write_watch_audit(
             self.session, self.actor, "watch.source.status_changed", "watch_source",
@@ -229,108 +264,33 @@ class WatchService:
         )
         return self._serialize_source(source)
 
-    # --- Watch Rules CRUD ---
-    async def list_rules(self, source_id: str, page: int = 1, page_size: int = 20) -> tuple[list[dict], int]:
+    async def update_source_cron(self, source_id: str, cron_expression: str | None) -> dict:
+        """Update cron scheduling configuration for a source."""
         source = await self.session.get(WatchSource, source_id)
         if source is None:
             raise ApiError(404, "NOT_FOUND", "数据源不存在")
 
-        total = await self.session.scalar(
-            select(func.count()).select_from(WatchRule).where(WatchRule.source_id == source_id)
-        )
-        rules = (
-            await self.session.scalars(
-                select(WatchRule)
-                .where(WatchRule.source_id == source_id)
-                .order_by(WatchRule.created_at.desc())
-                .offset((page - 1) * page_size)
-                .limit(page_size)
-            )
-        ).all()
-        return [self._serialize_rule(r) for r in rules], int(total or 0)
-
-    async def create_rule(self, source_id: str, payload: WatchRuleCreate) -> dict:
-        source = await self.session.get(WatchSource, source_id)
-        if source is None:
-            raise ApiError(404, "NOT_FOUND", "数据源不存在")
-
-        if payload.extractor_type not in ALLOWED_EXTRACTOR_TYPES:
-            raise ApiError(400, "VALIDATION_ERROR", "不支持的解析类型")
-
-        try:
-            validate_rule_security(
-                payload.request_headers, payload.request_params, payload.extractor_config
-            )
-        except ApiError as e:
-            raise ApiError(422, "SOURCE_UNSAFE", str(e), e.details)
-
-        rule = WatchRule(
-            id=str(uuid4()),
-            source_id=source_id,
-            name=payload.name,
-            request_method=payload.request_method,
-            request_headers=payload.request_headers,
-            request_params=payload.request_params,
-            extractor_type=payload.extractor_type,
-            extractor_config=payload.extractor_config,
-            status="disabled",
-        )
-        self.session.add(rule)
-        await write_watch_audit(
-            self.session, self.actor, "watch.rule.created", "watch_rule",
-            rule.id, "succeeded", {"name": rule.name}, self.ip_address
-        )
-        return self._serialize_rule(rule)
-
-    async def update_rule(self, rule_id: str, payload: WatchRuleUpdate) -> dict:
-        rule = await self.session.get(WatchRule, rule_id)
-        if rule is None:
-            raise ApiError(404, "NOT_FOUND", "采集规则不存在")
-
-        source = await self.session.get(WatchSource, rule.source_id)
-        if source is None:
-            raise ApiError(404, "NOT_FOUND", "关联的数据源不存在")
-
-        if payload.extractor_type and payload.extractor_type not in ALLOWED_EXTRACTOR_TYPES:
-            raise ApiError(400, "VALIDATION_ERROR", "不支持的解析类型")
-
-        if payload.request_headers is not None or payload.request_params is not None or payload.extractor_config is not None:
-            merged_headers = payload.request_headers if payload.request_headers is not None else rule.request_headers
-            merged_params = payload.request_params if payload.request_params is not None else rule.request_params
-            merged_config = payload.extractor_config if payload.extractor_config is not None else rule.extractor_config
-            try:
-                validate_rule_security(merged_headers, merged_params, merged_config)
-            except ApiError as e:
-                raise ApiError(422, "SOURCE_UNSAFE", str(e), e.details)
-
-        if payload.name is not None:
-            rule.name = payload.name
-        if payload.request_method is not None:
-            rule.request_method = payload.request_method
-        if payload.request_headers is not None:
-            rule.request_headers = payload.request_headers
-        if payload.request_params is not None:
-            rule.request_params = payload.request_params
-        if payload.extractor_type is not None:
-            rule.extractor_type = payload.extractor_type
-        if payload.extractor_config is not None:
-            rule.extractor_config = payload.extractor_config
-        if payload.status is not None:
-            if payload.status == "active":
-                try:
-                    validate_source_policy(source.entry_url, source.allowed_hosts)
-                except ApiError as e:
-                    raise ApiError(422, "SOURCE_UNSAFE", str(e), e.details)
-            rule.status = payload.status
+        source.cron_expression = cron_expression
 
         await write_watch_audit(
-            self.session, self.actor, "watch.rule.updated", "watch_rule",
-            rule.id, "succeeded", None, self.ip_address
+            self.session, self.actor, "watch.source.cron_updated", "watch_source",
+            source.id, "succeeded", {"cron_expression": cron_expression},
+            self.ip_address,
         )
-        return self._serialize_rule(rule)
+        return self._serialize_source(source)
+
+    async def get_sources_with_cron_enabled(self) -> list[WatchSource]:
+        """Get all active sources that have a cron expression configured."""
+        sources = await self.session.scalars(
+            select(WatchSource).where(
+                WatchSource.status == "active",
+                WatchSource.cron_expression.is_not(None),
+            )
+        )
+        return sources.all()
 
     # --- Collection Tasks ---
-    async def create_task(self, payload: CollectionTaskCreate) -> dict:
+    async def create_task(self, payload: CollectionTaskCreate, trigger_type: str = "manual") -> dict:
         source_ids = set()
         for target in payload.targets:
             source_ids.add(target.source_id)
@@ -347,21 +307,11 @@ class WatchService:
             except ApiError as e:
                 raise ApiError(422, "SOURCE_UNSAFE", str(e), e.details)
 
-            for target in payload.targets:
-                if target.source_id == source_id:
-                    rule = await self.session.get(WatchRule, target.rule_id)
-                    if rule is None:
-                        raise ApiError(404, "NOT_FOUND", f"规则 {target.rule_id} 不存在")
-                    if rule.source_id != source_id:
-                        raise ApiError(400, "VALIDATION_ERROR", f"规则 {target.rule_id} 不属于数据源 {source_id}")
-                    if rule.status != "active":
-                        raise ApiError(409, "INVALID_STATE", f"规则 {rule.name} 未启用")
-
         task = CollectionTask(
             id=str(uuid4()),
             created_by=self.actor.id,
             status="pending",
-            trigger_type="manual",
+            trigger_type=trigger_type,
             source_count=len(source_ids),
         )
         self.session.add(task)
@@ -370,7 +320,6 @@ class WatchService:
             task_source = CollectionTaskSource(
                 task_id=task.id,
                 source_id=target.source_id,
-                rule_id=target.rule_id,
                 status="pending",
             )
             self.session.add(task_source)
@@ -426,7 +375,7 @@ class WatchService:
         task_sources = (
             await self.session.scalars(
                 select(CollectionTaskSource)
-                .options(selectinload(CollectionTaskSource.source), selectinload(CollectionTaskSource.rule))
+                .options(selectinload(CollectionTaskSource.source))
                 .where(CollectionTaskSource.task_id == task_id)
             )
         ).all()
@@ -436,16 +385,38 @@ class WatchService:
             sources_data.append({
                 "source_id": ts.source_id,
                 "source_name": ts.source.name if ts.source else None,
-                "rule_id": ts.rule_id,
-                "rule_name": ts.rule.name if ts.rule else None,
                 "status": ts.status,
                 "failure_summary": ts.failure_summary,
                 "started_at": ts.started_at,
                 "finished_at": ts.finished_at,
             })
 
+        # Load collected knowledge items for this task
+        task_items = (
+            await self.session.scalars(
+                select(CollectionTaskItem)
+                .options(selectinload(CollectionTaskItem.knowledge_item).selectinload(KnowledgeItem.source))
+                .where(CollectionTaskItem.task_id == task_id)
+                .order_by(CollectionTaskItem.created_at.desc())
+            )
+        ).all()
+
+        items_data = []
+        for ti in task_items:
+            ki = ti.knowledge_item
+            items_data.append({
+                "id": ki.id,
+                "title": ki.title,
+                "canonical_url": ki.canonical_url,
+                "source_name": ki.source.name if ki.source else None,
+                "ingest_result": ti.ingest_result,
+                "status": ki.status,
+                "collected_at": ki.collected_at,
+            })
+
         result = self._serialize_task(task, include_failure_summary=True)
         result["sources"] = sources_data
+        result["items"] = items_data
         return result
 
     async def cancel_task(self, task_id: str) -> dict:
@@ -477,7 +448,7 @@ class WatchService:
             task_sources = (
                 await self.session.scalars(
                     select(CollectionTaskSource)
-                    .options(selectinload(CollectionTaskSource.source), selectinload(CollectionTaskSource.rule))
+                    .options(selectinload(CollectionTaskSource.source))
                     .where(CollectionTaskSource.task_id == task_id)
                 )
             ).all()
@@ -530,12 +501,18 @@ class WatchService:
             await self.session.commit()
 
     async def _execute_source_collection(self, task_source: CollectionTaskSource) -> tuple[int, int, str | None]:
-        """Execute collection for a single source/rule."""
+        """Execute collection for a single source (rule fields read from source)."""
         source = task_source.source
-        rule = task_source.rule
 
-        if not source or not rule:
+        if not source:
             return 0, 1, "COLLECTION_FAILED"
+
+        # Read rule fields directly from the source
+        request_method = source.request_method or "GET"
+        request_headers = source.request_headers or {}
+        request_params = source.request_params or {}
+        extractor_type = source.extractor_type or "html"
+        extractor_config = source.extractor_config or {}
 
         try:
             validate_fetch_target(source.entry_url, source.allowed_hosts)
@@ -543,11 +520,10 @@ class WatchService:
             return 0, 1, e.code
 
         headers = {"Accept": "text/html,application/json"}
-        if rule.request_headers:
-            merged = dict(rule.request_headers)
+        if request_headers:
+            merged = dict(request_headers)
             merged.update(headers)
             headers = merged
-        params = rule.request_params or {}
 
         if source.auth_ciphertext:
             try:
@@ -561,10 +537,10 @@ class WatchService:
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.request(
-                    method=rule.request_method,
+                    method=request_method,
                     url=source.entry_url,
                     headers=headers,
-                    params=params,
+                    params=request_params,
                 )
                 response.raise_for_status()
         except httpx.RequestError as e:
@@ -573,10 +549,10 @@ class WatchService:
             return 0, 1, "UPSTREAM_ERROR"
 
         content_type = response.headers.get("content-type", "")
-        if "application/json" in content_type or rule.extractor_type == "json":
-            items = self._extract_json_items(response.text, rule.extractor_config)
+        if "application/json" in content_type or extractor_type == "json":
+            items = self._extract_json_items(response.text, extractor_config)
         else:
-            items = self._extract_html_items(response.text, rule.extractor_config)
+            items = self._extract_html_items(response.text, extractor_config)
 
         success_count = 0
         failure_count = 0

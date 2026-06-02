@@ -7,7 +7,7 @@ import AdminPageHeader from '@/components/AdminPageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { useSessionStore } from '@/stores/session'
 import type { FunctionItem, PermissionItem } from '@/types'
-import { errorMessage, isUserCancelled } from '@/utils/display'
+import { errorMessage, isUserCancelled, statusLabel } from '@/utils/display'
 
 const session = useSessionStore()
 const loading = ref(false)
@@ -127,7 +127,7 @@ async function saveEdit(): Promise<void> {
 async function toggleStatus(item: FunctionItem): Promise<void> {
   const status = item.status === 'active' ? 'disabled' : 'active'
   try {
-    await ElMessageBox.confirm(`确认将功能 ${item.code} 改为 ${status}？`, '状态确认', { type: 'warning' })
+    await ElMessageBox.confirm(`确认将功能 ${item.code} 改为 ${statusLabel(status)}？`, '状态确认', { type: 'warning' })
     await patch<FunctionItem>(`/api/v1/admin/functions/${item.id}`, { status })
     await refreshAfterChange()
   } catch (error) {
@@ -208,7 +208,7 @@ onMounted(load)
       <el-form-item label="图标标识"><el-input v-model="editForm.icon" /></el-form-item>
       <el-form-item label="所需权限"><el-select v-model="editForm.required_permission_code" clearable><el-option v-for="item in permissions" :key="item.id" :value="item.code" :label="`${item.name} (${item.code})`" /></el-select></el-form-item>
       <el-form-item label="排序"><el-input-number v-model="editForm.sort_order" :min="0" /></el-form-item>
-      <el-form-item label="状态"><el-select v-model="editForm.status"><el-option value="active" label="active" /><el-option value="disabled" label="disabled" /></el-select></el-form-item>
+      <el-form-item label="状态"><el-select v-model="editForm.status"><el-option value="active" label="启用" /><el-option value="disabled" label="停用" /></el-select></el-form-item>
     </el-form>
     <template #footer><el-button @click="editVisible = false">取消</el-button><el-button type="primary" :loading="submitting" @click="saveEdit">保存</el-button></template>
   </el-dialog>

@@ -105,13 +105,13 @@ onMounted(load)
       <el-table-column prop="priority" label="优先级" width="80" />
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
-          <el-tag :type="row.status === 'active' ? 'success' : row.status === 'unhealthy' ? 'danger' : 'info'" size="small">{{ row.status }}</el-tag>
+          <el-tag :type="row.status === 'active' ? 'success' : row.status === 'unhealthy' ? 'danger' : 'info'" size="small">{{ row.status === 'active' ? '启用' : row.status === 'unhealthy' ? '不健康' : '停用' }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="健康检查" width="180">
         <template #default="{ row }">
           <div v-if="row.last_health_check_result" style="font-size: 12px">
-            <el-tag :type="row.last_health_check_result === 'passed' ? 'success' : 'danger'" size="small">{{ row.last_health_check_result }}</el-tag>
+            <el-tag :type="row.last_health_check_result === 'passed' ? 'success' : 'danger'" size="small">{{ row.last_health_check_result === 'passed' ? '通过' : '失败' }}</el-tag>
             <div style="color: #999; margin-top: 2px">{{ row.last_health_check_at }}</div>
           </div>
           <span v-else style="color: #999">未检查</span>

@@ -124,7 +124,7 @@ onMounted(load)
       <el-form-item label="角色代码"><el-input :model-value="selected?.code" disabled /></el-form-item>
       <el-form-item label="名称"><el-input v-model="editForm.name" /></el-form-item>
       <el-form-item label="说明"><el-input v-model="editForm.description" type="textarea" /></el-form-item>
-      <el-form-item label="状态"><el-select v-model="editForm.status"><el-option label="active" value="active" /><el-option label="disabled" value="disabled" /></el-select></el-form-item>
+      <el-form-item label="状态"><el-select v-model="editForm.status"><el-option label="启用" value="active" /><el-option label="停用" value="disabled" /></el-select></el-form-item>
       <el-form-item label="授予权限"><el-checkbox-group v-model="editForm.permission_ids" class="check-stack"><el-checkbox v-for="permission in permissions" :key="permission.id" :value="permission.id">{{ permission.name }} <small>{{ permission.code }}</small></el-checkbox></el-checkbox-group></el-form-item>
     </el-form>
     <template #footer><el-button @click="editVisible = false">取消</el-button><el-button type="primary" :loading="submitting" @click="saveEdit">保存</el-button></template>

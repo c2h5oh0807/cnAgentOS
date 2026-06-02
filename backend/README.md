@@ -6,7 +6,6 @@ Common commands from this directory:
 
 ```bash
 uv sync
-uv run alembic upgrade head
 uv run python main.py
 uv lock --check
 uv run pytest

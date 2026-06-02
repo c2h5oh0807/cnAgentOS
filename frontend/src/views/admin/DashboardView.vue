@@ -8,7 +8,7 @@ import { onMounted, onUnmounted, ref, nextTick } from 'vue'
 import { get } from '@/api/client'
 import AdminPageHeader from '@/components/AdminPageHeader.vue'
 import type { DashboardStats, TrendData, KeywordItem } from '@/types'
-import { errorMessage } from '@/utils/display'
+import { errorMessage, statusLabel } from '@/utils/display'
 
 const loading = ref(false)
 const stats = ref<DashboardStats | null>(null)
@@ -202,21 +202,6 @@ function renderGlobe(): void {
   })
 }
 
-function statusLabel(s: string): string {
-  const labels: Record<string, string> = {
-    available: '可用',
-    excluded: '排除',
-    archived: '归档',
-    active: '活跃',
-    disabled: '停用',
-    succeeded: '成功',
-    failed: '失败',
-    pending: '等待',
-    running: '运行中',
-    partial_failed: '部分失败',
-  }
-  return labels[s] || s
-}
 
 onMounted(() => {
   load()

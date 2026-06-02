@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -8,7 +7,6 @@ import { post } from '@/api/client'
 import { errorMessage } from '@/utils/display'
 
 const router = useRouter()
-const formRef = ref<FormInstance>()
 const loading = ref(false)
 const form = reactive({
   username: '',
@@ -17,36 +15,19 @@ const form = reactive({
   password_confirm: '',
 })
 
-const rules: FormRules = {
-  username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 4, max: 30, message: '用户名长度 4-30 字符', trigger: 'blur' },
-    {
-      pattern: /^[a-zA-Z][a-zA-Z0-9_-]{2,28}[a-zA-Z0-9]$/,
-      message: '以字母开头，只允许字母、数字、下划线和连字符',
-      trigger: 'blur',
-    },
-  ],
-  display_name: [
-    { required: true, message: '请输入显示名', trigger: 'blur' },
-    { min: 1, max: 120, message: '显示名最长 120 字符', trigger: 'blur' },
-  ],
-  password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 12, max: 128, message: '密码长度 12-128 字符', trigger: 'blur' },
-  ],
-  password_confirm: [
-    { required: true, message: '请确认密码', trigger: 'blur' },
-    {
-      validator: (_rule: unknown, value: string) => value === form.password,
-      message: '两次密码输入不一致',
-      trigger: 'blur',
-    },
-  ],
-}
-
 async function submit(): Promise<void> {
-  if (!(await formRef.value?.validate().catch(() => false))) return
+  if (!form.username || !form.display_name || !form.password || !form.password_confirm) {
+    ElMessage.warning('请填写所有字段')
+    return
+  }
+  if (form.password.length < 6) {
+    ElMessage.warning('密码至少 6 个字符')
+    return
+  }
+  if (form.password !== form.password_confirm) {
+    ElMessage.warning('两次密码输入不一致')
+    return
+  }
   loading.value = true
   try {
     await post('/api/v1/auth/register', {
@@ -66,125 +47,201 @@ async function submit(): Promise<void> {
 
 <template>
   <main class="register-screen">
-    <section class="register-story">
-      <p class="page-eyebrow">INTELLIGENCE WATCH / DATA ANSWERS</p>
-      <h1>注册账号<br />开始使用</h1>
-      <p>注册后将获得智能问数和智能聊天的使用权限。</p>
-    </section>
-    <el-card class="register-card" shadow="never">
-      <div class="brand">
-        <span class="brand-monogram">CN</span>
-        <span><strong>cnAgentOS</strong><small>创建账号</small></span>
+    <div class="register-bg">
+      <div class="register-bg-circle c1" />
+      <div class="register-bg-circle c2" />
+    </div>
+    <div class="register-container">
+      <div class="register-header">
+        <router-link to="/login" class="back-link">← 返回登录</router-link>
+        <h1>创建账号</h1>
+        <p class="register-subtitle">注册后即可使用智能问数和聊天功能</p>
       </div>
-      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" autocomplete="username" placeholder="4-30 字符，字母开头" size="large" />
-        </el-form-item>
-        <el-form-item label="显示名" prop="display_name">
-          <el-input v-model="form.display_name" placeholder="你的显示名称" size="large" />
-        </el-form-item>
-        <el-form-item label="密码" prop="password">
-          <el-input v-model="form.password" autocomplete="new-password" placeholder="至少 12 字符" show-password size="large" />
-        </el-form-item>
-        <el-form-item label="确认密码" prop="password_confirm">
-          <el-input v-model="form.password_confirm" autocomplete="new-password" placeholder="再次输入密码" show-password size="large" @keyup.enter="submit" />
-        </el-form-item>
-        <el-button class="register-submit" type="primary" size="large" :loading="loading" @click="submit">注册</el-button>
-      </el-form>
-      <p class="login-link">
-        已有账号？<router-link to="/login">登录</router-link>
-      </p>
-    </el-card>
+      <div class="register-form">
+        <div class="input-field">
+          <label>用户名</label>
+          <input v-model="form.username" type="text" autocomplete="username" placeholder="4-30 字符，字母开头" />
+        </div>
+        <div class="input-field">
+          <label>显示名</label>
+          <input v-model="form.display_name" type="text" placeholder="你的显示名称" />
+        </div>
+        <div class="input-field">
+          <label>密码</label>
+          <input v-model="form.password" type="password" autocomplete="new-password" placeholder="至少 6 个字符" />
+        </div>
+        <div class="input-field">
+          <label>确认密码</label>
+          <input v-model="form.password_confirm" type="password" autocomplete="new-password" placeholder="再次输入密码" @keyup.enter="submit" />
+        </div>
+        <button class="register-btn" :class="{ loading }" :disabled="loading" @click="submit">
+          <span v-if="loading" class="btn-loading" />
+          <span v-else>注 册</span>
+        </button>
+      </div>
+    </div>
   </main>
 </template>
 
 <style scoped>
 .register-screen {
-  display: flex;
   min-height: 100vh;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3rem;
-  padding: 2rem;
-  background: var(--el-bg-color-page);
+  background: #F7F7F7;
+  position: relative;
+  overflow: hidden;
 }
 
-.register-story {
-  max-width: 360px;
+.register-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
-.page-eyebrow {
-  font-size: 0.75rem;
-  letter-spacing: 0.15em;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 0.5rem;
+.register-bg-circle {
+  position: absolute;
+  border-radius: 50%;
 }
 
-.register-story h1 {
-  font-size: 2rem;
-  font-weight: 700;
-  line-height: 1.3;
-  margin-bottom: 0.75rem;
+.register-bg-circle.c1 {
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(7, 193, 96, 0.08), transparent 70%);
+  top: -100px; left: -120px;
 }
 
-.register-story p {
-  color: var(--el-text-color-secondary);
-  line-height: 1.6;
+.register-bg-circle.c2 {
+  width: 300px; height: 300px;
+  background: radial-gradient(circle, rgba(7, 193, 96, 0.06), transparent 70%);
+  bottom: -60px; right: -80px;
 }
 
-.register-card {
+.register-container {
+  position: relative;
   width: 400px;
+  background: #FFFFFF;
+  border-radius: 16px;
+  padding: 32px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  z-index: 1;
 }
 
-.brand {
+.register-header {
+  margin-bottom: 28px;
+}
+
+.back-link {
+  display: inline-block;
+  font-size: 13px;
+  color: #999;
+  text-decoration: none;
+  margin-bottom: 16px;
+  transition: color 0.2s;
+}
+
+.back-link:hover {
+  color: #07C160;
+}
+
+.register-header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  color: #1A1A1A;
+}
+
+.register-subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: #999;
+}
+
+.register-form {
   display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  margin-bottom: 1.5rem;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.brand-monogram {
-  width: 40px;
-  height: 40px;
+.input-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.input-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #666;
+}
+
+.input-field input {
+  width: 100%;
+  height: 44px;
+  padding: 0 14px;
+  border: 1.5px solid #E5E5E5;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #1A1A1A;
+  background: #FAFAFA;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s;
+  box-sizing: border-box;
+}
+
+.input-field input:focus {
+  border-color: #07C160;
+  background: #FFFFFF;
+}
+
+.input-field input::placeholder {
+  color: #B2B2B2;
+}
+
+.register-btn {
+  height: 46px;
+  border: none;
+  border-radius: 10px;
+  background: #07C160;
+  color: #FFFFFF;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--el-color-primary);
-  color: #fff;
-  font-weight: 700;
-  border-radius: 8px;
-  font-size: 0.875rem;
+  letter-spacing: 0.1em;
+  margin-top: 8px;
 }
 
-.brand small {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--el-text-color-secondary);
+.register-btn:hover {
+  background: #06AD56;
 }
 
-.register-submit {
-  width: 100%;
-  margin-top: 0.5rem;
+.register-btn:active {
+  transform: scale(0.98);
 }
 
-.login-link {
-  text-align: center;
-  margin-top: 1rem;
-  font-size: 0.875rem;
-  color: var(--el-text-color-secondary);
+.register-btn.loading {
+  background: #B2E6C4;
+  cursor: not-allowed;
 }
 
-.login-link a {
-  color: var(--el-color-primary);
-  text-decoration: none;
+.register-btn:disabled {
+  cursor: not-allowed;
 }
 
-@media (max-width: 768px) {
-  .register-screen {
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-  .register-story { display: none; }
-  .register-card { width: 100%; max-width: 400px; }
+.btn-loading {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #FFFFFF;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

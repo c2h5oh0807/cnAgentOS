@@ -6,7 +6,7 @@ import { get, patch, post, postStream, put } from '@/api/client'
 import AdminPageHeader from '@/components/AdminPageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import type { ModelItem } from '@/types'
-import { errorMessage, isUserCancelled, shortTime } from '@/utils/display'
+import { errorMessage, isUserCancelled, shortTime, statusLabel } from '@/utils/display'
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -109,7 +109,7 @@ async function saveEdit(): Promise<void> {
 async function toggleStatus(model: ModelItem): Promise<void> {
   const status = model.status === 'active' ? 'disabled' : 'active'
   try {
-    await ElMessageBox.confirm(`确认将模型 ${model.name} 改为 ${status}？`, '状态确认', { type: 'warning' })
+    await ElMessageBox.confirm(`确认将模型 ${model.name} 改为 ${statusLabel(status)}？`, '状态确认', { type: 'warning' })
     await patch<ModelItem>(`/api/v1/admin/models/${model.id}/status`, { status })
     ElMessage.success('模型状态已更新')
     await load()

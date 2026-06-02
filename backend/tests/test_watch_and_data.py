@@ -1,4 +1,4 @@
-"""Integration tests for Phase 2B Watch and Data features."""
+"""Integration tests for Phase 2B Watch and Data features (merged source+rule)."""
 
 import pytest
 from sqlalchemy import select
@@ -9,7 +9,6 @@ from cnagentos.models.entities import (
     CollectionTask,
     CollectionTaskSource,
     KnowledgeItem,
-    WatchRule,
     WatchSource,
 )
 from cnagentos.services.collection_security import (
@@ -17,6 +16,22 @@ from cnagentos.services.collection_security import (
     validate_rule_security,
     validate_source_policy,
 )
+
+# Sample extractor config for tests
+_SAMPLE_EXTRACTOR = {
+    "item_selector": ".news-item",
+    "title_selector": ".title",
+    "content_selector": ".content",
+}
+_SAMPLE_SOURCE = {
+    "name": "Test Source",
+    "source_type": "web_page",
+    "entry_url": "https://example.com/page",
+    "allowed_hosts": ["example.com"],
+    "request_method": "GET",
+    "extractor_type": "html",
+    "extractor_config": _SAMPLE_EXTRACTOR,
+}
 
 
 def resolver_for(records: dict[str, list[str]]):
@@ -195,15 +210,6 @@ async def test_watch_sources_list_endpoint_exists(client, admin_session):
     assert "data" in data
 
 
-async def test_watch_rules_list_endpoint(client, admin_session):
-    """GET /api/v1/admin/watch-sources/{id}/rules returns 404 for non-existent source."""
-    response = await client.get(
-        "/api/v1/admin/watch-sources/non-existent-source-id/rules",
-        headers={"X-CSRF-Token": admin_session},
-    )
-    assert response.status_code == 404
-
-
 async def test_collection_tasks_list_endpoint_exists(client, admin_session):
     """GET /api/v1/admin/collection-tasks endpoint works."""
     response = await client.get(
@@ -226,58 +232,66 @@ async def test_create_source_requires_csrf(client, admin_session):
     """POST /api/v1/admin/watch-sources requires CSRF token."""
     response = await client.post(
         "/api/v1/admin/watch-sources",
-        json={
-            "name": "Test",
-            "source_type": "web_page",
-            "entry_url": "https://example.com/page",
-            "allowed_hosts": ["example.com"],
-        },
+        json=_SAMPLE_SOURCE,
     )
     assert response.status_code == 403
 
 
 async def test_create_source_validates_security(client, admin_session):
     """Source creation validates SSRF policy - HTTP rejected."""
+    payload = dict(_SAMPLE_SOURCE)
+    payload["entry_url"] = "http://example.com/page"
     response = await client.post(
         "/api/v1/admin/watch-sources",
-        json={
-            "name": "Bad Source",
-            "source_type": "web_page",
-            "entry_url": "http://example.com/page",
-            "allowed_hosts": ["example.com"],
-        },
+        json=payload,
         headers={"X-CSRF-Token": admin_session},
     )
     assert response.status_code == 422
 
 
-async def test_create_source_validates_https(client, admin_session):
-    """Source creation: HTTP URLs are rejected."""
+async def test_create_source_requires_extractor_config(client, admin_session):
+    """Source creation requires extractor_config (merged rule field)."""
+    payload = {
+        "name": "No Extract",
+        "source_type": "web_page",
+        "entry_url": "https://example.com/page",
+        "allowed_hosts": ["example.com"],
+        "request_method": "GET",
+        # missing extractor_config
+    }
     response = await client.post(
         "/api/v1/admin/watch-sources",
-        json={
-            "name": "HTTP Source",
-            "source_type": "web_page",
-            "entry_url": "http://http.example.com/path",
-            "allowed_hosts": ["http.example.com"],
-        },
+        json=payload,
         headers={"X-CSRF-Token": admin_session},
     )
-    assert response.status_code == 422
+    assert response.status_code in (400, 422)
 
 
 async def test_audit_log_records_source_creation(client, admin_session):
-    """Creating a source with valid data returns 201."""
+    """Creating a source with valid data returns 201 or 422 (DNS)."""
     response = await client.post(
         "/api/v1/admin/watch-sources",
-        json={
-            "name": "Valid Source",
-            "source_type": "web_page",
-            "entry_url": "https://valid.example.com/page",
-            "allowed_hosts": ["valid.example.com"],
-        },
+        json=_SAMPLE_SOURCE,
         headers={"X-CSRF-Token": admin_session},
     )
     # Either 201 (success) or 422 (DNS resolution failure in test) is acceptable
-    # The important thing is HTTP validation works
     assert response.status_code in (201, 422)
+
+
+async def test_source_serialization_includes_rule_fields(client, admin_session):
+    """Source response includes merged rule fields."""
+    response = await client.get(
+        "/api/v1/admin/watch-sources",
+        headers={"X-CSRF-Token": admin_session},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    if data:
+        item = data[0]
+        # Rule fields should be present
+        assert "request_method" in item
+        assert "extractor_type" in item
+        assert "extractor_config" in item
+        # Cron fields should be present
+        assert "cron_expression" in item
+        assert "cron_enabled" in item

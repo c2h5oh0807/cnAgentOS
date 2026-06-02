@@ -291,7 +291,7 @@ class DigitalEmployeeService:
         results = []
         for mention in mentions:
             for emp in active_emps:
-                if mention == emp.name:
+                if mention == emp.name or mention == emp.code:
                     results.append(self._to_dict(emp, include_prompt=True))
                     break
         return results

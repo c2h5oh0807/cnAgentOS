@@ -13,9 +13,35 @@ export function shortTime(value?: string | null): string {
 export function statusType(status?: string | null): 'primary' | 'success' | 'info' | 'warning' | 'danger' {
   if (status === 'active' || status === 'available' || status === 'succeeded' || status === 'success') return 'success'
   if (status === 'disabled' || status === 'archived' || status === 'cancelled' || status === 'pending') return 'info'
-  if (status === 'excluded' || status === 'partial_failed') return 'warning'
+  if (status === 'excluded' || status === 'partial_failed' || status === 'unhealthy') return 'warning'
   if (status === 'failed' || status === 'error') return 'danger'
   return 'primary'
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  active: '启用',
+  disabled: '停用',
+  available: '可用',
+  excluded: '排除',
+  archived: '归档',
+  succeeded: '成功',
+  failed: '失败',
+  pending: '等待',
+  running: '运行中',
+  streaming: '生成中',
+  completed: '已完成',
+  cancelled: '已取消',
+  partial_failed: '部分失败',
+  unhealthy: '不健康',
+  passed: '通过',
+  error: '错误',
+  success: '成功',
+  created: '新增',
+  duplicate: '重复',
+}
+
+export function statusLabel(status?: string | null): string {
+  return status ? (STATUS_LABELS[status] ?? status) : '-'
 }
 
 /**

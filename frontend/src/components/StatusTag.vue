@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { statusType } from '@/utils/display'
+import { statusLabel, statusType } from '@/utils/display'
 
 const props = defineProps<{ value?: string | null }>()
 const tagType = computed(() => statusType(props.value))
+const displayText = computed(() => statusLabel(props.value))
 </script>
 
 <template>
-  <el-tag :type="tagType" effect="plain" round>{{ value || '-' }}</el-tag>
+  <el-tag :type="tagType" effect="plain" round>{{ displayText }}</el-tag>
 </template>
