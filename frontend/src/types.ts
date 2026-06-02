@@ -383,6 +383,11 @@ export interface AdminFileItem {
 // Phase 8 — 数智大屏与舆情分析
 // ============================================================
 
+export interface ModelCallsByPurpose {
+  count: number
+  failed: number
+}
+
 export interface DashboardStats {
   knowledge_items: Record<string, number>
   watch_sources: Record<string, number>
@@ -391,6 +396,34 @@ export interface DashboardStats {
   users: Record<string, number>
   chat_messages?: Record<string, number>
   updated_at: string
+
+  // Phase 8+ enhancements
+  model_calls?: {
+    total: number
+    total_today: number
+    by_purpose: Record<string, ModelCallsByPurpose>
+    avg_latency_ms: number
+    avg_total_tokens: number
+  }
+  collection_health?: {
+    total_success: number
+    total_failure: number
+    success_rate: number
+    recent_failures_7d: number
+  }
+  sentiment_summary?: {
+    latest_task_name: string
+    latest_status: string
+    risk_level: string | null
+    summary_snippet: string
+    completed_at: string
+  } | null
+  source_distribution?: Array<{
+    source_name: string
+    source_type: string
+    item_count: number
+    status: string
+  }>
 }
 
 export interface TrendItem {
@@ -402,6 +435,8 @@ export interface TrendData {
   knowledge_items: TrendItem[]
   qa_questions: TrendItem[]
   chat_messages: TrendItem[]
+  model_calls?: TrendItem[]
+  model_tokens?: TrendItem[]
 }
 
 export interface KeywordItem {

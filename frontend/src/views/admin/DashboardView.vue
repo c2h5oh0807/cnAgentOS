@@ -1,37 +1,79 @@
 <script setup lang="ts">
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
-import 'echarts-gl'
 import 'echarts-wordcloud'
-import { onMounted, onUnmounted, ref, nextTick } from 'vue'
+import { onMounted, onUnmounted, ref, computed, nextTick, watch } from 'vue'
 
 import { get } from '@/api/client'
 import AdminPageHeader from '@/components/AdminPageHeader.vue'
+import KpiCard from '@/components/KpiCard.vue'
+import HealthAlertBar from '@/components/HealthAlertBar.vue'
+import SentimentSummaryCard from '@/components/SentimentSummaryCard.vue'
 import type { DashboardStats, TrendData, KeywordItem } from '@/types'
-import { errorMessage, statusLabel } from '@/utils/display'
+import { errorMessage } from '@/utils/display'
 
 const loading = ref(false)
 const stats = ref<DashboardStats | null>(null)
 const trends = ref<TrendData | null>(null)
 const keywords = ref<KeywordItem[]>([])
+const insightTab = ref<'sentiment' | 'wordcloud'>('sentiment')
 
-const trendChartRef = ref<HTMLElement | null>(null)
-const distChartRef = ref<HTMLElement | null>(null)
+// Model error rate for health bar
+const modelErrorRate = computed<number | undefined>(() => {
+  if (!stats.value?.model_calls?.total) return undefined
+  const totalFailed = Object.values(stats.value.model_calls.by_purpose || {})
+    .reduce((s, p) => s + (p.failed || 0), 0)
+  return Number(((totalFailed / stats.value.model_calls.total) * 100).toFixed(1))
+})
+
+// Deltas for KPI cards
+const kpiDeltas = computed(() => {
+  if (!trends.value) return {}
+  const t = trends.value
+  const mid = Math.floor(t.knowledge_items.length / 2)
+  if (mid < 2) return {}
+  const calc = (arr: TrendData['knowledge_items']) => {
+    const recent = arr.slice(mid).reduce((s, d) => s + d.count, 0)
+    const prev = arr.slice(0, mid).reduce((s, d) => s + d.count, 0)
+    return prev > 0 ? Math.round(((recent - prev) / prev) * 100) : 0
+  }
+  return {
+    knowledge_items: calc(t.knowledge_items),
+    qa_questions: calc(t.qa_questions),
+    chat_messages: calc(t.chat_messages),
+  }
+})
+
+// Chart refs
+const contentTrendChartRef = ref<HTMLElement | null>(null)
+const modelTrendChartRef = ref<HTMLElement | null>(null)
 const wordcloudChartRef = ref<HTMLElement | null>(null)
-const globeChartRef = ref<HTMLElement | null>(null)
+const modelChartRef = ref<HTMLElement | null>(null)
+const sourceChartRef = ref<HTMLElement | null>(null)
 
-let trendChart: echarts.ECharts | null = null
-let distChart: echarts.ECharts | null = null
+let contentTrendChart: echarts.ECharts | null = null
+let modelTrendChart: echarts.ECharts | null = null
 let wordcloudChart: echarts.ECharts | null = null
-let globeChart: echarts.ECharts | null = null
+let modelChart: echarts.ECharts | null = null
+let sourceChart: echarts.ECharts | null = null
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
+// ----- Deterministic color for wordcloud -----
+function stringToHue(str: string): number {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return ((hash % 360) + 360) % 360
+}
+
+// ----- Data loading -----
 async function load(): Promise<void> {
   loading.value = true
   try {
     const [statsData, trendsData, kwData] = await Promise.all([
       get<DashboardStats>('/api/v1/admin/dashboard/stats'),
-      get<TrendData>('/api/v1/admin/dashboard/trends?days=14'),
+      get<TrendData>('/api/v1/admin/dashboard/trends?days=30'),
       get<KeywordItem[]>('/api/v1/admin/dashboard/keywords?limit=50'),
     ])
     stats.value = statsData
@@ -47,20 +89,22 @@ async function load(): Promise<void> {
 }
 
 function renderCharts(): void {
-  renderTrendChart()
-  renderDistChart()
+  renderContentTrendChart()
+  renderModelTrendChart()
   renderWordcloud()
-  renderGlobe()
+  renderModelUsageChart()
+  renderSourceDistribution()
 }
 
-function renderTrendChart(): void {
-  if (!trendChartRef.value || !trends.value) return
-  if (!trendChart) trendChart = echarts.init(trendChartRef.value)
+// ----- Chart renderers -----
+function renderContentTrendChart(): void {
+  if (!contentTrendChartRef.value || !trends.value) return
+  if (!contentTrendChart) contentTrendChart = echarts.init(contentTrendChartRef.value)
 
   const dates = trends.value.knowledge_items.map(d => d.date)
-  trendChart.setOption({
+  contentTrendChart.setOption({
     tooltip: { trigger: 'axis' },
-    legend: { data: ['知识项', '问数', '消息'], textStyle: { fontSize: 12 } },
+    legend: { data: ['知识项', '问数', '消息'], textStyle: { fontSize: 11 } },
     grid: { left: 50, right: 20, top: 30, bottom: 30 },
     xAxis: { type: 'category', data: dates, axisLabel: { rotate: 45, fontSize: 10 } },
     yAxis: { type: 'value', minInterval: 1 },
@@ -84,27 +128,41 @@ function renderTrendChart(): void {
   })
 }
 
-function renderDistChart(): void {
-  if (!distChartRef.value || !stats.value?.knowledge_items) return
-  if (!distChart) distChart = echarts.init(distChartRef.value)
+function renderModelTrendChart(): void {
+  if (!modelTrendChartRef.value || !trends.value) return
+  if (!modelTrendChart) modelTrendChart = echarts.init(modelTrendChartRef.value)
 
-  const ki = stats.value.knowledge_items
-  const data = Object.entries(ki)
-    .filter(([k]) => k !== 'total')
-    .map(([name, value]) => ({ name: statusLabel(name), value }))
+  const dates = trends.value.knowledge_items.map(d => d.date)
+  const series: echarts.EChartsOption['series'] = []
 
-  distChart.setOption({
-    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-    series: [
-      {
-        type: 'pie',
-        radius: ['35%', '60%'],
-        center: ['50%', '50%'],
-        data,
-        label: { show: true, formatter: '{b}\n{d}%', fontSize: 11 },
-        emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.2)' } },
-      },
-    ],
+  if (trends.value.model_calls?.length) {
+    series.push({
+      name: '模型调用',
+      type: 'line',
+      smooth: true,
+      data: trends.value.model_calls.map(d => d.count),
+      itemStyle: { color: '#909399' },
+    } as any)
+  }
+  if (trends.value.model_tokens?.length) {
+    series.push({
+      name: 'Token(k)',
+      type: 'line',
+      smooth: true,
+      lineStyle: { type: 'dashed' },
+      data: trends.value.model_tokens.map(d => Math.round(d.count / 1000)),
+      itemStyle: { color: '#B37FEB' },
+    } as any)
+  }
+
+  if (!series.length) return
+  modelTrendChart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['模型调用', 'Token(k)'], textStyle: { fontSize: 11 } },
+    grid: { left: 50, right: 20, top: 30, bottom: 30 },
+    xAxis: { type: 'category', data: dates, axisLabel: { rotate: 45, fontSize: 10 } },
+    yAxis: { type: 'value', minInterval: 1 },
+    series,
   })
 }
 
@@ -119,15 +177,15 @@ function renderWordcloud(): void {
       {
         type: 'wordCloud',
         gridSize: 10,
-        sizeRange: [12, 50],
+        sizeRange: [12, 48],
         rotationRange: [-30, 30],
         shape: 'circle',
         data: keywords.value.map(k => ({
           name: k.word,
           value: k.count,
           textStyle: {
-            color: `hsl(${Math.random() * 360}, 70%, 50%)`,
-            fontSize: 12 + (k.count / maxCount) * 38,
+            color: `hsl(${stringToHue(k.word)}, 65%, 50%)`,
+            fontSize: 12 + (k.count / maxCount) * 36,
           },
         })),
       },
@@ -135,161 +193,245 @@ function renderWordcloud(): void {
   })
 }
 
-function renderGlobe(): void {
-  if (!globeChartRef.value) return
-  if (!globeChart) globeChart = echarts.init(globeChartRef.value)
+function renderModelUsageChart(): void {
+  if (!modelChartRef.value || !stats.value?.model_calls) return
+  if (!modelChart) modelChart = echarts.init(modelChartRef.value)
 
-  // Generate sample data points for the globe scatter
-  const cities = [
-    { name: '北京', lng: 116.4, lat: 39.9 },
-    { name: '上海', lng: 121.5, lat: 31.2 },
-    { name: '广州', lng: 113.3, lat: 23.1 },
-    { name: '深圳', lng: 114.1, lat: 22.5 },
-    { name: '成都', lng: 104.1, lat: 30.6 },
-    { name: '杭州', lng: 120.2, lat: 30.3 },
-    { name: '武汉', lng: 114.3, lat: 30.6 },
-    { name: '西安', lng: 108.9, lat: 34.3 },
-    { name: '重庆', lng: 106.5, lat: 29.6 },
-    { name: '南京', lng: 118.8, lat: 32.1 },
-  ]
-  const scatterData = cities.map(c => ({
-    value: [c.lng, c.lat, Math.floor(Math.random() * 50) + 10],
-    name: c.name,
-  }))
+  const byPurpose = stats.value.model_calls.by_purpose || {}
+  const purposes = Object.keys(byPurpose)
+  if (!purposes.length) {
+    modelChart.setOption({ title: { text: '暂无数据', left: 'center', top: 'center' } })
+    return
+  }
 
-  globeChart.setOption({
-    globe: {
-      baseTexture: undefined, // will use default earth texture
-      heightTexture: undefined,
-      displacementScale: 0.04,
-      shading: 'realistic',
-      realisticMaterial: {
-        roughness: 0.5,
-        metalness: 0.1,
-      },
-      postEffect: {
-        enable: true,
-        bloom: { enable: true, intensity: 0.1 },
-      },
-      light: {
-        main: { intensity: 1.5 },
-        ambient: { intensity: 0.3 },
-      },
-      viewControl: {
-        autoRotate: true,
-        autoRotateSpeed: 5,
-        distance: 200,
-      },
-    },
+  const purposeLabels: Record<string, string> = {
+    qa_answer: '智能问数',
+    sentiment_analysis: '舆情分析',
+    connection_test: '连接测试',
+  }
+
+  const xData = purposes.map(p => purposeLabels[p] || p)
+  const countData = purposes.map(p => byPurpose[p].count)
+  const failedData = purposes.map(p => byPurpose[p].failed)
+
+  modelChart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['调用次数', '失败次数'], textStyle: { fontSize: 11 } },
+    grid: { left: 50, right: 20, top: 30, bottom: 30 },
+    xAxis: { type: 'category', data: xData },
+    yAxis: { type: 'value', minInterval: 1 },
     series: [
       {
-        type: 'scatter3D',
-        coordinateSystem: 'globe',
-        data: scatterData,
-        symbolSize: (val: number[]) => Math.max(8, val[2] || 10),
-        itemStyle: {
-          color: '#409EFF',
-          opacity: 0.8,
-        },
-        label: {
-          show: true,
-          formatter: (p: { name: string }) => p.name,
-          color: '#fff',
-          fontSize: 10,
-        },
+        name: '调用次数',
+        type: 'bar',
+        data: countData,
+        itemStyle: { color: '#409EFF', borderRadius: [4, 4, 0, 0] },
+      },
+      {
+        name: '失败次数',
+        type: 'bar',
+        data: failedData,
+        itemStyle: { color: '#F56C6C', borderRadius: [4, 4, 0, 0] },
       },
     ],
   })
 }
 
+function renderSourceDistribution(): void {
+  if (!sourceChartRef.value || !stats.value?.source_distribution?.length) return
+  if (!sourceChart) sourceChart = echarts.init(sourceChartRef.value)
 
+  const sources = stats.value.source_distribution!
+    .sort((a, b) => b.item_count - a.item_count)
+    .slice(0, 15)
+
+  sourceChart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 120, right: 30, top: 10, bottom: 30 },
+    xAxis: { type: 'value', minInterval: 1 },
+    yAxis: {
+      type: 'category',
+      data: sources.map(s => s.source_name),
+      axisLabel: { fontSize: 11 },
+    },
+    series: [
+      {
+        type: 'bar',
+        data: sources.map(s => ({
+          value: s.item_count,
+          itemStyle: {
+            color: s.status === 'active' ? '#67C23A' : s.status === 'disabled' ? '#909399' : '#E6A23C',
+          },
+        })),
+        barMaxWidth: 20,
+      },
+    ],
+  })
+}
+
+// ----- Watch for tab switching (wordcloud re-render) -----
+watch(insightTab, async (newVal) => {
+  if (newVal === 'wordcloud') {
+    // Dispose so we re-init since DOM was recreated by v-if
+    if (wordcloudChart) { wordcloudChart.dispose(); wordcloudChart = null }
+    await nextTick()
+    renderWordcloud()
+  }
+})
+
+// ----- Lifecycle -----
 onMounted(() => {
   load()
-  refreshTimer = setInterval(load, 30000)
+  refreshTimer = setInterval(load, 60000)
 })
 
 onUnmounted(() => {
   if (refreshTimer) clearInterval(refreshTimer)
-  ;[trendChart, distChart, wordcloudChart, globeChart].forEach(chart => chart?.dispose())
+  ;[contentTrendChart, modelTrendChart, wordcloudChart, modelChart, sourceChart]
+    .forEach(chart => chart?.dispose())
 })
 </script>
 
 <template>
   <AdminPageHeader title="数智大屏" description="系统核心指标与数据可视化" />
 
-  <!-- KPI Cards -->
-  <el-row :gutter="16" style="margin-bottom: 16px" v-if="stats">
-    <el-col :xs="12" :sm="6">
-      <el-card shadow="hover">
-        <div style="text-align: center">
-          <div style="font-size: 28px; font-weight: bold; color: #409EFF">{{ stats.knowledge_items.total || 0 }}</div>
-          <div style="color: #999; font-size: 13px">知识项</div>
-        </div>
+  <!-- System Health Alert Bar -->
+  <HealthAlertBar
+    :risk-level="stats?.sentiment_summary?.risk_level"
+    :collection-health="stats?.collection_health?.success_rate"
+    :model-error-rate="modelErrorRate"
+    :loading="loading && !stats"
+  />
+
+  <!-- Row 1: KPI Cards -->
+  <el-row :gutter="16" style="margin-bottom: 16px">
+    <el-col :xs="12" :sm="8" :md="4" style="margin-bottom: 12px">
+      <KpiCard
+        title="知识项"
+        :value="stats?.knowledge_items?.total ?? '-'"
+        :delta="kpiDeltas.knowledge_items"
+        delta-label="较半月前"
+        :subtitle="`可用 ${stats?.knowledge_items?.available ?? 0}`"
+        color="#409EFF"
+        :loading="loading && !stats"
+      />
+    </el-col>
+    <el-col :xs="12" :sm="8" :md="4" style="margin-bottom: 12px">
+      <KpiCard
+        title="采集成功率"
+        :value="(stats?.collection_health?.success_rate ?? '-') + '%'"
+        subtitle="近7天失败 {{ stats?.collection_health?.recent_failures_7d ?? 0 }} 次"
+        color="#67C23A"
+        :loading="loading && !stats"
+      />
+    </el-col>
+    <el-col :xs="12" :sm="8" :md="4" style="margin-bottom: 12px">
+      <KpiCard
+        title="模型调用"
+        :value="stats?.model_calls?.total_today ?? '-'"
+        delta-label="今日"
+        :subtitle="`平均 ${stats?.model_calls?.avg_latency_ms ?? '-'}ms`"
+        color="#B37FEB"
+        :loading="loading && !stats"
+      />
+    </el-col>
+    <el-col :xs="12" :sm="8" :md="4" style="margin-bottom: 12px">
+      <KpiCard
+        title="问数会话"
+        :value="stats?.qa_sessions?.total ?? '-'"
+        :delta="kpiDeltas.qa_questions"
+        delta-label="较半月前"
+        color="#E6A23C"
+        :loading="loading && !stats"
+      />
+    </el-col>
+    <el-col :xs="12" :sm="8" :md="4" style="margin-bottom: 12px">
+      <KpiCard
+        title="活跃用户"
+        :value="(stats?.users?.active_today ?? '-') + '/' + (stats?.users?.total ?? '-')"
+        subtitle="今日 / 总数"
+        color="#F56C6C"
+        :loading="loading && !stats"
+      />
+    </el-col>
+    <el-col :xs="12" :sm="8" :md="4" style="margin-bottom: 12px">
+      <KpiCard
+        title="数据源"
+        :value="stats?.watch_sources?.total ?? '-'"
+        :subtitle="`活跃 ${stats?.watch_sources?.active ?? 0}`"
+        color="#19C9A8"
+        :loading="loading && !stats"
+      />
+    </el-col>
+  </el-row>
+
+  <!-- Row 2: Two trend charts side by side -->
+  <el-row :gutter="16" style="margin-bottom: 16px">
+    <el-col :xs="24" :md="12" style="margin-bottom: 12px">
+      <el-card>
+        <template #header><span>采集趋势 (30日)</span></template>
+        <div ref="contentTrendChartRef" style="width: 100%; height: 300px"></div>
       </el-card>
     </el-col>
-    <el-col :xs="12" :sm="6">
-      <el-card shadow="hover">
-        <div style="text-align: center">
-          <div style="font-size: 28px; font-weight: bold; color: #67C23A">{{ stats.collection_tasks.total || 0 }}</div>
-          <div style="color: #999; font-size: 13px">采集任务</div>
-        </div>
-      </el-card>
-    </el-col>
-    <el-col :xs="12" :sm="6">
-      <el-card shadow="hover">
-        <div style="text-align: center">
-          <div style="font-size: 28px; font-weight: bold; color: #E6A23C">{{ stats.qa_sessions.total || 0 }}</div>
-          <div style="color: #999; font-size: 13px">问数会话</div>
-        </div>
-      </el-card>
-    </el-col>
-    <el-col :xs="12" :sm="6">
-      <el-card shadow="hover">
-        <div style="text-align: center">
-          <div style="font-size: 28px; font-weight: bold; color: #F56C6C">{{ stats.users.active_today || 0 }}<span style="font-size:14px;color:#999">/{{ stats.users.total || 0 }}</span></div>
-          <div style="color: #999; font-size: 13px">活跃用户/总数</div>
-        </div>
+    <el-col :xs="24" :md="12" style="margin-bottom: 12px">
+      <el-card>
+        <template #header><span>模型趋势 (30日)</span></template>
+        <div ref="modelTrendChartRef" style="width: 100%; height: 300px"></div>
       </el-card>
     </el-col>
   </el-row>
 
+  <!-- Row 3: Model Usage + Sentiment / Wordcloud -->
   <el-row :gutter="16" style="margin-bottom: 16px">
-    <!-- Trend Chart -->
-    <el-col :xs="24" :sm="12" style="margin-bottom: 16px">
+    <el-col :xs="24" :md="14" style="margin-bottom: 12px">
       <el-card>
-        <template #header><span>趋势图 (14日)</span></template>
-        <div ref="trendChartRef" style="width: 100%; height: 300px"></div>
+        <template #header><span>模型调用统计</span></template>
+        <div ref="modelChartRef" style="width: 100%; height: 300px"></div>
       </el-card>
     </el-col>
-    <!-- Distribution Pie -->
-    <el-col :xs="24" :sm="12" style="margin-bottom: 16px">
+    <el-col :xs="24" :md="10" style="margin-bottom: 12px">
       <el-card>
-        <template #header><span>知识项状态分布</span></template>
-        <div ref="distChartRef" style="width: 100%; height: 300px"></div>
+        <template #header>
+          <div style="display: flex; align-items: center; justify-content: space-between">
+            <el-radio-group v-model="insightTab" size="small">
+              <el-radio-button value="sentiment">舆情快照</el-radio-button>
+              <el-radio-button value="wordcloud">词云</el-radio-button>
+            </el-radio-group>
+          </div>
+        </template>
+        <SentimentSummaryCard
+          v-if="insightTab === 'sentiment'"
+          :task-name="stats?.sentiment_summary?.latest_task_name"
+          :risk-level="stats?.sentiment_summary?.risk_level"
+          :summary-snippet="stats?.sentiment_summary?.summary_snippet"
+          :completed-at="stats?.sentiment_summary?.completed_at"
+          :loading="loading && !stats"
+        />
+        <div
+          v-if="insightTab === 'wordcloud'"
+          ref="wordcloudChartRef"
+          style="width: 100%; height: 300px"
+        />
+        <div
+          v-if="insightTab === 'wordcloud' && !keywords.length && !loading"
+          style="text-align:center;padding:40px;color:#999"
+        >暂无关键词数据</div>
       </el-card>
     </el-col>
   </el-row>
 
+  <!-- Row 4: Source Distribution (full width) -->
   <el-row :gutter="16" style="margin-bottom: 16px">
-    <!-- Word Cloud -->
-    <el-col :xs="24" :sm="12" style="margin-bottom: 16px">
+    <el-col :span="24">
       <el-card>
-        <template #header><span>词云</span></template>
-        <div v-if="!keywords.length && !loading" style="text-align:center;padding:40px;color:#999">暂无关键词数据</div>
-        <div ref="wordcloudChartRef" style="width: 100%; height: 350px"></div>
-      </el-card>
-    </el-col>
-    <!-- 3D Earth -->
-    <el-col :xs="24" :sm="12" style="margin-bottom: 16px">
-      <el-card>
-        <template #header><span>3D 数据分布</span></template>
-        <div ref="globeChartRef" style="width: 100%; height: 400px"></div>
+        <template #header><span>数据源分布</span></template>
+        <div ref="sourceChartRef" style="width: 100%; height: 300px"></div>
       </el-card>
     </el-col>
   </el-row>
 
   <!-- Loading overlay -->
-  <div v-if="loading" v-loading="loading" style="min-height: 100px"></div>
+  <div v-if="loading" v-loading="loading" style="min-height: 50px"></div>
 </template>
 
 <style scoped>

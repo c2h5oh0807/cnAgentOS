@@ -32,11 +32,53 @@
     "qa_sessions": { "total": 30, "active": 25, "archived": 5 },
     "users": { "total": 15, "active_today": 3 },
     "chat_messages": { "total_24h": 200, "total": 5000 },
+    "model_calls": {
+      "total": 1200,
+      "total_today": 45,
+      "by_purpose": {
+        "qa_answer": { "count": 800, "failed": 5 },
+        "sentiment_analysis": { "count": 300, "failed": 2 },
+        "connection_test": { "count": 100, "failed": 10 }
+      },
+      "avg_latency_ms": 850.5,
+      "avg_total_tokens": 1250.3
+    },
+    "collection_health": {
+      "total_success": 9500,
+      "total_failure": 120,
+      "success_rate": 98.8,
+      "recent_failures_7d": 3
+    },
+    "sentiment_summary": {
+      "latest_task_name": "五月舆情分析",
+      "latest_status": "completed",
+      "risk_level": "低",
+      "summary_snippet": "整体舆情态势平稳，主要话题集中在...",
+      "completed_at": "2026-05-31T12:05:00Z"
+    },
+    "source_distribution": [
+      { "source_name": "新闻API", "source_type": "web_api", "item_count": 450, "status": "active" },
+      { "source_name": "论坛爬虫", "source_type": "web_page", "item_count": 230, "status": "active" }
+    ],
     "updated_at": "2026-05-31T12:00:00Z"
   },
   "meta": { "request_id": "uuid" }
 }
 ```
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `knowledge_items` | object | 知识项总数及按状态分布 |
+| `watch_sources` | object | 数据源总数及按状态分布 |
+| `collection_tasks` | object | 采集任务总数及按状态分布 |
+| `qa_sessions` | object | 问数会话总数及按状态分布 |
+| `users` | object | 用户总数及今日活跃数 |
+| `chat_messages` | object | 聊天消息总数 |
+| `model_calls` | object | 模型调用统计：总数、今日数、按用途分组、平均延迟、平均 token 消耗 |
+| `collection_health` | object | 采集健康度：成功/失败总数、成功率、近7天失败数 |
+| `sentiment_summary` | object\|null | 最新舆情分析摘要：任务名称、风险等级（低/中/高）、摘要片段 |
+| `source_distribution` | array | 数据源知识项分布 Top 15：数据源名称、类型、数量、状态 |
+| `updated_at` | string | 聚合时间戳 |
 
 ### `GET /dashboard/trends`
 
@@ -62,11 +104,27 @@
     ],
     "chat_messages": [
       { "date": "2026-05-01", "count": 45 }
+    ],
+    "model_calls": [
+      { "date": "2026-05-01", "count": 30 },
+      { "date": "2026-05-02", "count": 25 }
+    ],
+    "model_tokens": [
+      { "date": "2026-05-01", "count": 45000 },
+      { "date": "2026-05-02", "count": 38000 }
     ]
   },
   "meta": { "request_id": "uuid" }
 }
 ```
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `knowledge_items` | array | 每日知识项入库数 |
+| `qa_questions` | array | 每日用户问数问题数 |
+| `chat_messages` | array | 每日聊天消息数 |
+| `model_calls` | array | 每日模型调用次数（新增） |
+| `model_tokens` | array | 每日 token 消耗总量（新增） |
 
 ### `GET /dashboard/keywords`
 
