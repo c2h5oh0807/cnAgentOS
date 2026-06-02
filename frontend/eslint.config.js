@@ -3,7 +3,7 @@ import pluginVue from 'eslint-plugin-vue'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['dist/', 'coverage/'] },
+  { ignores: ['dist/', 'coverage/', 'public/'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   ...pluginVue.configs['flat/recommended'],
@@ -17,6 +17,7 @@ export default tseslint.config(
         FormData: 'readonly',
         Headers: 'readonly',
         TextDecoder: 'readonly',
+        HTMLVideoElement: 'readonly',
       },
       parserOptions: {
         parser: tseslint.parser,
