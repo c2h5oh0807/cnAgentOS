@@ -6,30 +6,40 @@ from fastapi import FastAPI, Request
 from cnagentos.api import register_api_support, success_response
 from cnagentos.config import Settings, get_settings
 from cnagentos.controllers.admin import router as admin_router
+from cnagentos.controllers.admin_chat import router as admin_chat_router
+from cnagentos.controllers.admin_database import router as admin_database_router
+from cnagentos.controllers.admin_employee import router as admin_employee_router
+from cnagentos.controllers.admin_sentiment import router as admin_sentiment_router
+from cnagentos.controllers.admin_server import router as admin_server_router
 from cnagentos.controllers.auth import router as auth_router
 from cnagentos.controllers.chat import router as chat_router
-from cnagentos.controllers.model_engine import router as model_engine_router
-from cnagentos.controllers.watch_and_data import router as watch_data_router, _background_tasks
-from cnagentos.controllers.qa import router as qa_router
-from cnagentos.controllers.ws import router as ws_router
 from cnagentos.controllers.file import router as file_router
-from cnagentos.controllers.admin_chat import router as admin_chat_router
-from cnagentos.controllers.admin_employee import router as admin_employee_router
-from cnagentos.controllers.admin_server import router as admin_server_router
-from cnagentos.controllers.admin_sentiment import router as admin_sentiment_router
+from cnagentos.controllers.model_engine import router as model_engine_router
+from cnagentos.controllers.qa import router as qa_router
+from cnagentos.controllers.watch_and_data import router as watch_data_router, _background_tasks
+from cnagentos.controllers.ws import router as ws_router
 from cnagentos.db import Base, build_engine, build_sessionmaker
 from cnagentos.security import init_cipher
+from cnagentos.services.database_config import resolve_database_url, resolve_sync_database_url
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     active_settings = settings or get_settings()
+
+    # Resolve dynamic database URL based on active_database setting
+    database_url = resolve_database_url(active_settings)
+    sync_url = resolve_sync_database_url(database_url)
+
     init_cipher(active_settings.encryption_key)
-    engine = build_engine(active_settings)
+    engine = build_engine(active_settings, database_url)
     sessionmaker = build_sessionmaker(engine)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # --- Startup ---
+        # Ensure the resolved URL is stored on settings so downstream code sees it
+        app.state.settings.database_url = database_url
+
         # Auto-create tables for development
         async with engine.connect() as conn:
             from sqlalchemy import inspect
@@ -39,7 +49,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await conn.run_sync(Base.metadata.create_all)
         # Initialize and start the APScheduler
         from cnagentos.services.scheduler import init_scheduler, set_sessionmaker, register_all_collection_jobs
-        scheduler = init_scheduler(active_settings.sync_database_url)
+        scheduler = init_scheduler(sync_url)
         set_sessionmaker(sessionmaker)
         scheduler.start()
         app.state.scheduler = scheduler
@@ -60,6 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = active_settings
     app.state.engine = engine
     app.state.sessionmaker = sessionmaker
+    app.state.db_switch_lock = asyncio.Lock()
     register_api_support(app)
     app.include_router(auth_router)
     app.include_router(admin_router)
@@ -73,6 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin_employee_router)
     app.include_router(admin_server_router)
     app.include_router(admin_sentiment_router)
+    app.include_router(admin_database_router)
 
     @app.get("/health")
     async def health(request: Request):

@@ -43,6 +43,8 @@ const router = createRouter({
         // Phase 8 admin pages
         { path: 'dashboard', component: () => import('@/views/admin/DashboardView.vue') },
         { path: 'sentiment', component: () => import('@/views/admin/SentimentAnalysisView.vue') },
+        // System settings
+        { path: 'settings', component: () => import('@/views/admin/SystemSettingsView.vue') },
       ],
     },
     { path: '/home', name: 'home', component: EmptyRoute },

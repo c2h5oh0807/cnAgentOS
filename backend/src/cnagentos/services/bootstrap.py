@@ -51,6 +51,8 @@ PERMISSIONS = [
     # Automation (Phase 9+)
     ("automation.view", "查看自动化", "automation", "查看定时任务"),
     ("automation.manage", "管理自动化", "automation", "创建、编辑、启停定时任务"),
+    # System (Phase 5+)
+    ("system.settings", "系统设置", "platform", "管理系统数据库与全局配置"),
 ]
 SYSTEM_ROLE_PERMISSION_CODES = {item[0] for item in PERMISSIONS}
 SYSTEM_FUNCTIONS = [
@@ -110,6 +112,7 @@ SYSTEM_FUNCTIONS = [
     ("admin_dashboard", "数智大屏", "admin_analytics", "/admin/dashboard", "data-analysis", 10, "sentiment.view"),
     ("admin_sentiment", "舆情分析", "admin_analytics", "/admin/sentiment", "chat-dot-square", 20, "sentiment.view"),
     # ("admin_automation", "定时任务", "admin", "/admin/scheduled-tasks", "timer", 90, "automation.view"),
+    ("admin_settings", "系统设置", "admin", "/admin/settings", "setting", 60, "system.settings"),
 ]
 
 

@@ -474,3 +474,43 @@ export interface SentimentReportItem {
 export interface SentimentTaskDetail extends SentimentTaskItem {
   reports?: SentimentReportItem[]
 }
+
+// ============================================================
+// Multi-database support (Phase 5)
+// ============================================================
+
+export interface DatabaseConfig {
+  active_database: 'sqlite' | 'mysql'
+  mysql: {
+    host: string
+    port: number
+    user: string
+    password: string
+    database: string
+  }
+}
+
+export interface DatabaseStatus {
+  type: string
+  connected: boolean
+  table_count: number
+}
+
+export interface TestConnectionRequest {
+  host: string
+  port: number
+  user: string
+  password: string
+  database: string
+}
+
+export interface SwitchDatabaseRequest {
+  type: 'sqlite' | 'mysql'
+  mysql?: {
+    host: string
+    port: number
+    user: string
+    password: string
+    database: string
+  }
+}

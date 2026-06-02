@@ -35,6 +35,34 @@ def init_scheduler(database_url: str) -> AsyncIOScheduler:
     return _scheduler
 
 
+async def reconfigure_scheduler(
+    sync_database_url: str,
+    sessionmaker: async_sessionmaker,
+) -> None:
+    """Reconfigure the APScheduler with a new database URL.
+
+    Used when switching active databases at runtime.
+    Shuts down the old scheduler, creates a new one with the new
+    job store, and re-registers collection jobs.
+    """
+    global _scheduler, _sessionmaker
+
+    old = _scheduler
+    if old is not None:
+        old.shutdown(wait=False)
+
+    jobstore = SQLAlchemyJobStore(url=sync_database_url)
+    _scheduler = AsyncIOScheduler(jobstores={"default": jobstore})
+    _scheduler.start()
+    _sessionmaker = sessionmaker
+
+    # Re-register collection jobs from the active database
+    _registered_source_jobs.clear()
+    await register_all_collection_jobs()
+
+    logger.info("APScheduler reconfigured with database URL: %s", sync_database_url)
+
+
 def get_scheduler() -> AsyncIOScheduler | None:
     """Return the global scheduler instance, or None if not initialized."""
     return _scheduler

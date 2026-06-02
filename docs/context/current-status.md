@@ -6,6 +6,38 @@
 
 **更新时间**：2026-06-02
 
+## 团队任务 5 实现摘要
+
+**分支**：当前分支
+
+**已实现能力：多数据库支持和切换功能**
+
+**后端**：
+- `docker-compose.yml` — 新增 MySQL 8.0 服务（端口 3306），含健康检查、持久化卷和预设用户/密码/数据库
+- `pyproject.toml` — 新增 `asyncmy>=0.2.9` 依赖，添加 `[project.optional-dependencies] mysql` 可选组
+- `config.py` — `Settings` 新增 `ACTIVE_DATABASE`（sqlite/mysql）、`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE` 六个环境变量字段；新增 `resolved_database_url` 属性根据 `active_database` 构造 MySQL URL；`sync_database_url` 增加 asyncmy/aiomysql 前缀剥离
+- `db.py` — `build_engine()` 支持可选的 `database_url` 参数覆盖
+- `services/database_config.py` — 核心服务层：`resolve_database_url()` 解析设置中的数据库 URL；`test_mysql_connection()` 测试 MySQL 连接并返回延迟；`switch_database()` 运行时切换数据库（dispose 旧 engine → 创建新 engine → `create_all` 建表 → 重建 APScheduler → 更新 app.state）；`get_database_status()` 返回当前连接状态和表数量
+- `controllers/admin_database.py` — 4 个 API 端点：
+  - `GET /api/v1/admin/database/config` — 返回当前数据库配置（密码脱敏）
+  - `GET /api/v1/admin/database/status` — 返回连接状态、类型、表数量
+  - `POST /api/v1/admin/database/test` — 测试 MySQL 连接
+  - `POST /api/v1/admin/database/switch` — 运行时切换数据库（并发保护，asyncio.Lock）
+- `app.py` — 启动时读取 `resolved_database_url`；注册 `admin_database_router`；添加 `app.state.db_switch_lock`
+- `scheduler.py` — 新增 `reconfigure_scheduler()` 支持切换后重建 APScheduler
+- `bootstrap.py` — 新增 `system.settings` 权限和 `admin_settings` 导航入口
+
+**前端**：
+- `types.ts` — 新增 `DatabaseConfig`、`DatabaseStatus`、`TestConnectionRequest`、`SwitchDatabaseRequest` 类型
+- `router/index.ts` — 新增 `/admin/settings` 路由
+- `AppNavigation.vue` — 添加 `setting` 图标映射
+- `SystemSettingsView.vue` — 新增系统设置页面：当前数据库状态卡片（类型标签、连接状态、表数量）；切换数据库弹窗（radio 选择 SQLite/MySQL、MySQL 连接表单、测试连接按钮、数据迁移警告提示）
+
+**验证**：
+- `uv lock --check` 通过（依赖一致性）
+- 后端启动验证通过（uvicorn 正常加载，OpenAPI 包含 4 个 /api/v1/admin/database/* 端点）
+- 默认 SQLite 启动正常，MySQL 可通过 Docker 启动后由管理页面配置切换
+
 Phase 6 实现了完整的仿微信聊天主链路：注册、通讯录、私聊、群聊和 WebSocket 实时通信。
 
 Phase 5 是设计与契约阶段，已完成：

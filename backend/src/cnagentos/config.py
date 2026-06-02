@@ -28,6 +28,17 @@ class Settings(BaseSettings):
     )
     cookie_secure: bool = Field(default=False, validation_alias="COOKIE_SECURE")
 
+    # --- Multi-database support (Phase 5) ---
+    active_database: str = Field(
+        default="sqlite",
+        validation_alias=AliasChoices("ACTIVE_DATABASE", "CNAGENTOS_ACTIVE_DATABASE"),
+    )
+    mysql_host: str = Field(default="127.0.0.1", validation_alias="MYSQL_HOST")
+    mysql_port: int = Field(default=3306, validation_alias="MYSQL_PORT", ge=1, le=65535)
+    mysql_user: str = Field(default="cnagentos", validation_alias="MYSQL_USER")
+    mysql_password: str = Field(default="cnagentos_pass_here", validation_alias="MYSQL_PASSWORD")
+    mysql_database: str = Field(default="cnagentos", validation_alias="MYSQL_DATABASE")
+
     @property
     def session_cookie_name(self) -> str:
         if self.environment.lower() == "production":
@@ -41,7 +52,24 @@ class Settings(BaseSettings):
     @property
     def sync_database_url(self) -> str:
         """Return a sync database URL for APScheduler's SQLAlchemyJobStore."""
-        return self.database_url.replace("+aiosqlite", "").replace("+asyncpg", "")
+        url = self.database_url
+        for prefix in ("+aiosqlite", "+asyncpg", "+asyncmy", "+aiomysql"):
+            url = url.replace(prefix, "")
+        return url
+
+    @property
+    def resolved_database_url(self) -> str:
+        """Return the database URL based on active_database setting.
+
+        When active_database is 'mysql', constructs a MySQL connection URL
+        from the MYSQL_* fields. Otherwise returns database_url (SQLite).
+        """
+        if self.active_database == "mysql":
+            return (
+                f"mysql+asyncmy://{self.mysql_user}:{self.mysql_password}"
+                f"@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
+            )
+        return self.database_url
 
     @model_validator(mode="after")
     def production_must_set_secrets(self):

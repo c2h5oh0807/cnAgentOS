@@ -16,8 +16,9 @@ class Base(DeclarativeBase):
     pass
 
 
-def build_engine(settings: Settings) -> AsyncEngine:
-    return create_async_engine(settings.database_url, pool_pre_ping=True)
+def build_engine(settings: Settings, database_url: str | None = None) -> AsyncEngine:
+    url = database_url or settings.database_url
+    return create_async_engine(url, pool_pre_ping=True)
 
 
 def build_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

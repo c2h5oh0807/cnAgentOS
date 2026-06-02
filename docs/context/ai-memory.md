@@ -28,6 +28,7 @@
 - 2026-05-31：Phase 8 情感分析的 model prompt 按 JSON 格式输出约束，`_save_reports` 中实现 JSON 解析和 markdown 代码块剥离的降级逻辑，解析失败时保存原始文本为 summary 报告。
 - 2026-05-31：Phase 8 前端 Dashboard 使用 `echarts.init` + `ref` 直接挂载（不引入 vue-echarts wrapper），组件卸载时在 `onUnmounted` 中 `dispose` 所有图表实例以避免内存泄漏。
 - 2026-05-31：Phase 8 前端 3D 地球的 scatter3D 数据点使用示例城市坐标展示，可在后续补充真实地理数据。echarts-gl 的地球纹理使用默认内置纹理，无需加载外部图片。
+- 2026-06-02：多数据库支持使用 Pydantic Settings 环境变量（ACTIVE_DATABASE / MYSQL_*）存储配置，通过运行时重建 SQLAlchemy engine/sessionmaker 实现不重启切换；切换目标库后只建空表（`create_all`），不迁移数据；APScheduler 在切换后重新注册采集任务。
 - 2026-06-02：手势悬浮层使用条件渲染 `<video>` 时，不能只在组件初次挂载时上报元素；应监听模板 ref 在开启手势后出现，并在关闭时取消尚未完成的 MediaPipe 和摄像头异步初始化。初始化失败后必须保留可诊断错误提示。
 
 ## 追加模板

@@ -12,6 +12,7 @@ const icons: Record<string, Component> = {
   key: Key,
   menu: Menu,
   settings: Setting,
+  setting: Setting,
   cpu: Cpu,
   activity: DataAnalysis,
   'data-analysis': DataAnalysis,
