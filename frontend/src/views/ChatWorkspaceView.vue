@@ -2,12 +2,13 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
-import { get, post } from '@/api/client'
+import { get, post, postFormData } from '@/api/client'
+import EmojiPicker from '@/components/EmojiPicker.vue'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import { useChatStore } from '@/stores/chat'
 import { useSessionStore } from '@/stores/session'
 import { errorMessage } from '@/utils/display'
-import type { ConversationMemberItem, ConversationItem, DigitalEmployeeItem } from '@/types'
+import type { AdminFileItem, ConversationMemberItem, ConversationItem, DigitalEmployeeItem } from '@/types'
 
 const session = useSessionStore()
 const chat = useChatStore()
@@ -33,6 +34,40 @@ const groupMembers = ref('')
 // --- Composer ---
 const newMessage = ref('')
 const messagePane = ref<HTMLElement | null>(null)
+
+// --- File upload ---
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const uploading = ref(false)
+const fileMetaCache = ref<Map<string, AdminFileItem>>(new Map())
+
+// --- Helpers ---
+function getFileMeta(fileId: string): AdminFileItem | undefined {
+  return fileMetaCache.value.get(fileId)
+}
+
+function formatFileSize(bytes?: number): string {
+  if (bytes == null) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+function getPreviewText(content?: string, contentType?: string): string {
+  if (!content) return ''
+  if (contentType === 'image') return '[图片]'
+  if (contentType === 'file') return '[文件]'
+  return content
+}
+
+async function fetchFileMeta(fileId: string): Promise<void> {
+  if (fileMetaCache.value.has(fileId)) return
+  try {
+    const meta = await get<AdminFileItem>('/api/v1/chat/files/' + fileId)
+    fileMetaCache.value = new Map(fileMetaCache.value).set(fileId, meta)
+  } catch {
+    // Silently ignore — metadata unavailable
+  }
+}
 
 // --- Computed ---
 const activeConversation = computed(() =>
@@ -286,6 +321,74 @@ async function handleSend(): Promise<void> {
   }
 }
 
+function onEmojiSelect(emoji: string): void {
+  const el = textareaRef.value
+  if (!el) return
+  const start = el.selectionStart
+  const end = el.selectionEnd
+  const text = newMessage.value
+  newMessage.value = text.substring(0, start) + emoji + text.substring(end)
+  nextTick(() => {
+    el.focus()
+    const newPos = start + emoji.length
+    el.selectionStart = el.selectionEnd = newPos
+  })
+}
+
+function triggerFileUpload(): void {
+  fileInputRef.value?.click()
+}
+
+async function handleFileSelected(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || !chat.activeConversationId) return
+
+  // Frontend validation: 10 MB limit
+  if (file.size > 10 * 1024 * 1024) {
+    ElMessage.warning('文件大小不能超过 10MB')
+    input.value = ''
+    return
+  }
+
+  uploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const result = await postFormData<AdminFileItem>('/api/v1/chat/files/upload', formData)
+
+    // Cache metadata
+    fileMetaCache.value = new Map(fileMetaCache.value).set(result.id, result)
+
+    const isImage = result.mime_type?.startsWith('image/')
+    const contentType = isImage ? 'image' : 'file'
+
+    if (chat.wsConnected) {
+      chat.wsSend('send_message', {
+        conversation_id: chat.activeConversationId,
+        content: result.id,
+        content_type: contentType,
+      })
+    } else {
+      await post('/api/v1/chat/messages', {
+        conversation_id: chat.activeConversationId,
+        content: result.id,
+        content_type: contentType,
+      })
+      await chat.loadMessages(chat.activeConversationId)
+    }
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    uploading.value = false
+    input.value = '' // Allow re-selecting the same file
+  }
+}
+
+function downloadFile(fileId: string): void {
+  window.open('/api/v1/chat/files/' + fileId + '/download', '_blank')
+}
+
 function autoResize(e: Event): void {
   const el = e.target as HTMLTextAreaElement
   el.style.height = 'auto'
@@ -314,6 +417,16 @@ watch(() => chat.messages.length, async () => {
     messagePane.value.scrollTop = messagePane.value.scrollHeight
   }
 })
+
+// Fetch file metadata for new file/image messages
+watch(() => chat.messages, (messages) => {
+  const needed = messages.filter(
+    m => (m.content_type === 'file' || m.content_type === 'image') && !fileMetaCache.value.has(m.content),
+  )
+  if (!needed.length) return
+  // Fire-and-forget — each call handles its own dedup
+  needed.forEach(m => fetchFileMeta(m.content))
+}, { deep: true })
 
 // Lifecycle
 onMounted(() => {
@@ -399,7 +512,7 @@ onUnmounted(() => {
               <span class="wx-conv-time">{{ formatConversationTime(conv.last_message?.created_at) }}</span>
             </div>
             <div class="wx-conv-bottom">
-              <span class="wx-conv-preview">{{ conv.last_message?.content || '' }}</span>
+              <span class="wx-conv-preview">{{ getPreviewText(conv.last_message?.content, conv.last_message?.content_type) }}</span>
               <span v-if="conv.unread_count" class="wx-unread-badge">{{ conv.unread_count > 99 ? '99+' : conv.unread_count }}</span>
             </div>
           </div>
@@ -462,8 +575,30 @@ onUnmounted(() => {
               {{ msg.sender_name }}
             </div>
             <div class="wx-msg-content">
-              <div class="wx-msg-bubble">
-                <MarkdownRenderer :content="msg.content" />
+              <div class="wx-msg-bubble" :class="{ 'is-image': msg.content_type === 'image' }">
+                <template v-if="msg.content_type === 'image'">
+                  <img
+                    :src="'/api/v1/chat/files/' + msg.content + '/download'"
+                    class="wx-msg-image"
+                    alt="图片"
+                    @click="downloadFile(msg.content)"
+                  />
+                  <span v-if="getFileMeta(msg.content)?.filename" class="wx-msg-image-name">
+                    {{ getFileMeta(msg.content)?.filename }}
+                  </span>
+                </template>
+                <template v-else-if="msg.content_type === 'file'">
+                  <div class="wx-msg-file" @click="downloadFile(msg.content)">
+                    <div class="wx-file-icon">📎</div>
+                    <div class="wx-file-info">
+                      <span class="wx-file-name">{{ getFileMeta(msg.content)?.filename || '文件' }}</span>
+                      <span class="wx-file-size">{{ formatFileSize(getFileMeta(msg.content)?.size_bytes) }}</span>
+                    </div>
+                  </div>
+                </template>
+                <template v-else>
+                  <MarkdownRenderer :content="msg.content" />
+                </template>
               </div>
               <div class="wx-msg-time">{{ formatTime(msg.created_at) }}</div>
             </div>
@@ -490,6 +625,15 @@ onUnmounted(() => {
             </div>
           </div>
           <div class="wx-composer-row">
+            <div class="wx-composer-toolbar">
+              <EmojiPicker @select="onEmojiSelect" />
+              <button class="wx-toolbar-btn" :disabled="uploading" title="上传文件" @click="triggerFileUpload">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                </svg>
+              </button>
+              <input ref="fileInputRef" type="file" style="display:none" @change="handleFileSelected" />
+            </div>
             <div class="wx-composer-input">
               <textarea
                 ref="textareaRef"
@@ -502,7 +646,11 @@ onUnmounted(() => {
                 @blur="closeMention"
               />
             </div>
-            <button class="wx-composer-btn" :disabled="!newMessage.trim()" @click="handleSend">
+            <button v-if="uploading" class="wx-composer-btn" disabled>
+              <span class="wx-loading-spinner" />
+              上传中
+            </button>
+            <button v-else class="wx-composer-btn" :disabled="!newMessage.trim()" @click="handleSend">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
               </svg>
@@ -1315,5 +1463,127 @@ onUnmounted(() => {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+}
+
+/* ── Composer Toolbar ─────────────────────────────────────────── */
+.wx-composer-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 0 0;
+  flex-shrink: 0;
+}
+
+.wx-toolbar-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+}
+
+.wx-toolbar-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.wx-toolbar-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Image Message ────────────────────────────────────────────── */
+.wx-msg-bubble.is-image {
+  padding: 0;
+  overflow: hidden;
+  background: transparent !important;
+  border: none !important;
+  max-width: 280px;
+}
+
+.wx-msg-image {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.wx-msg-image:hover {
+  opacity: 0.9;
+}
+
+.wx-msg-image-name {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 8px 8px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── File Message ─────────────────────────────────────────────── */
+.wx-msg-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  cursor: pointer;
+  min-width: 180px;
+}
+
+.wx-msg-file:hover {
+  opacity: 0.8;
+}
+
+.wx-file-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.wx-file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wx-file-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wx-file-size {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Loading Spinner ──────────────────────────────────────────── */
+.wx-loading-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #FFFFFF;
+  border-radius: 50%;
+  animation: wx-spin 0.6s linear infinite;
+}
+
+@keyframes wx-spin {
+  to { transform: rotate(360deg); }
 }
 </style>

@@ -328,6 +328,7 @@ class ChatService:
             if last_msg_row:
                 last_msg = {
                     "content": last_msg_row.content[:200],
+                    "content_type": last_msg_row.content_type,
                     "sender_name": last_msg_row.sender.username if last_msg_row.sender else "",
                     "created_at": last_msg_row.created_at.isoformat() if last_msg_row.created_at else None,
                 }

@@ -1,5 +1,6 @@
 from typing import Any
 from uuid import uuid4
+import logging
 
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
@@ -7,6 +8,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
+
+
+logger = logging.getLogger(__name__)
 
 
 class ApiError(Exception):
@@ -98,7 +102,8 @@ def register_api_support(app: FastAPI) -> None:
         )
 
     @app.exception_handler(Exception)
-    async def handle_unexpected_error(request: Request, _exc: Exception) -> JSONResponse:
+    async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("未捕获异常: %s", exc)
         return JSONResponse(
             status_code=500,
             content={

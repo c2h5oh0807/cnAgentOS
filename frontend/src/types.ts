@@ -243,6 +243,7 @@ export interface ConversationItem {
   unread_count: number
   last_message?: {
     content: string
+    content_type?: string
     sender_name: string
     created_at: string
   } | null

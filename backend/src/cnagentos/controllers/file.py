@@ -68,14 +68,27 @@ async def download_file(
 ):
     from fastapi.responses import StreamingResponse
     import io
+    from urllib.parse import quote
+    from pathlib import Path as _Path
 
     svc = service_for(request, session, context)
     data, filename, mime_type = await svc.download_file(file_id)
+
+    # RFC 5987: Use filename* for non-ASCII filenames; keep ASCII fallback
+    ascii_name = filename.encode("ascii", "replace").decode("ascii")
+    ext = _Path(filename).suffix
+    if not ascii_name.endswith(ext):
+        ascii_name += ext
+    safe_name = quote(filename, safe="")
+
+    # Inline for images (so <img> can display), attachment for other files
+    disposition_type = "inline" if mime_type and mime_type.startswith("image/") else "attachment"
+
     return StreamingResponse(
         io.BytesIO(data),
         media_type=mime_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": f'{disposition_type}; filename="{ascii_name}"; filename*=UTF-8\'\'{safe_name}',
             "Content-Length": str(len(data)),
         },
     )
