@@ -3,8 +3,10 @@ import asyncio
 import getpass
 import os
 
+from sqlalchemy import inspect
+
 from cnagentos.config import get_settings
-from cnagentos.db import build_engine, build_sessionmaker
+from cnagentos.db import Base, build_engine, build_sessionmaker
 from cnagentos.services.bootstrap import create_system_admin
 
 
@@ -14,6 +16,14 @@ async def create_admin(args: argparse.Namespace) -> None:
     )
     settings = get_settings()
     engine = build_engine(settings)
+
+    # Auto-create tables if not yet present (mirrors app.py lifespan behavior)
+    async with engine.connect() as conn:
+        has_tables = await conn.run_sync(lambda sync_conn: inspect(sync_conn).has_table("users"))
+    if not has_tables:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
     factory = build_sessionmaker(engine)
     try:
         async with factory() as session:
